@@ -6,7 +6,7 @@
 - В папке **configs** находятся конфиги для бейзлайна.
 - Для запуска бейзлайна в корне проекта должна быть папка **data** с данными. В **public_test.csv** значения целевой переменной для расчета метрик.
 - После обучения файл с весами модели **model.cbm** появится в папке **model**.
-- После запуска инференса файл с прогнозом **sub.csv** появится в папке **output**.
+- После запуска инференса файл с прогнозом **submission.csv** появится в папке **output**.
 - В папке **scripts** лежит скрипт **get_metrics.py** для расчета метрик.
 ```
 .
@@ -29,7 +29,7 @@
 ├── model
 │   └── model.cbm
 ├── output
-│   └── sub.csv
+│   └── submission.csv
 └── scripts
     └── get_metrics.py
 ```
@@ -62,5 +62,5 @@ docker run -it --rm -v `pwd`/data:/data -v `pwd`/output:/output -v `pwd`/scripts
     --entrypoint python catboost-baseline:latest \
     /scripts/get_metrics.py \
     -g /data/public_test.csv \
-    -p /output/sub.csv
+    -p /output/submission.csv
 ```
