@@ -6,15 +6,6 @@ import numpy as np
 from pathlib import Path
 
 
-def get_mape(y_true, y_pred):
-    return (abs(y_true-y_pred)/y_true).mean()
-
-
-def get_smape(y_true, y_pred):
-    sapes = (abs(y_true-y_pred)/((abs(y_true)+abs(y_pred))/2)).sum()
-    return 100*sapes/len(y_true)
-
-
 def get_rmsle(y_true, y_pred):
     return np.sqrt(np.mean((np.log(y_pred+1)-np.log(y_true+1))**2))
 
@@ -84,10 +75,8 @@ def relative_tp_fp_score(
 
 def main(args):
     arg_fun_map = {
-        "mape": get_mape,
-        "smape": get_smape,
         "rmsle": get_rmsle,
-        "client": get_client_val,
+        "client_val": get_client_val,
     }
 
     metric = arg_fun_map.get(args.metric, None)
@@ -96,10 +85,11 @@ def main(args):
         raise ValueError(f"Метрика {args.metric} не поддерживается!")
 
     df_true = pd.read_csv(args.ground_truth)
-    df_pred = pd.read_csv(args.predictions)
 
-    if len(df_true) != len(df_pred):
-        raise ValueError("Разный размер файлов прогноза и истинных значений!")
+    df_pred = pd.read_csv(args.predictions)
+    df_pred = df_pred.drop_duplicates(subset=["filename"])
+
+    assert len(df_true) == len(df_pred)
 
     df_pred = df_pred = df_pred.rename(columns={
             'filename': 'randomizedName',
@@ -109,8 +99,7 @@ def main(args):
     size_before = len(df_true)
     df_true = df_true.merge(df_pred, on='randomizedName')
 
-    if len(df_true) != size_before:
-        raise ValueError("В файле истинных значений и прогноза не совпадают имена файлов!")
+    assert len(df_true) == size_before
 
     if args.target == "CurrentTTF":
         df_true['CurrentTTF_pred'] = df_true['daysFromLastStart'] + df_true['daysToFailure_pred']
@@ -136,13 +125,12 @@ def get_args(args=None):
     parser.add_argument(
         '-t', '--target',
         type=str, default='daysToFailure',
-        help='ЦП для метрики: daysToFailure или CurrentTTF'
+        help='Целевая переменная для метрики: daysToFailure или CurrentTTF'
     )
     parser.add_argument(
         '-m', '--metric',
-        type=str, default='smape',
-        help='Метрика для расчета. Варианты: mape, smape, rmsle, ' +
-              'client_val (метрика заказчика)'
+        type=str, default='rmsle',
+        help='Метрика для расчета: rmsle, client_val'
     )
     return parser.parse_args(args)
 
