@@ -153,7 +153,7 @@ def predict(args):
     model = CatBoostRegressor().load_model(args.model_dir / 'model.cbm')
     preds = model.predict(test_df)
     sub = pd.DataFrame({'filename': [well_path.name for well_path in well_paths], 'daysToFailure': preds})
-    sub.to_csv(args.output_dir / 'sub.csv', index=False)
+    sub.to_csv(args.output_dir / 'submission.csv', index=False)
 
 
 def main(args):
