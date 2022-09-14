@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 
 def process_single_df(split, column_dtypes, tsfresh_features, well_path):
-    df = pd.read_csv(well_path, low_memory=True, dtype=column_dtypes)
+    df = pd.read_csv(well_path, low_memory=False, dtype=column_dtypes)
 
     df['SK_Calendar'] = pd.to_datetime(df['SK_Calendar'], format='%Y-%m-%d')
     df['lastStartDate'] = pd.to_datetime(df['lastStartDate'], format='%Y-%m-%d')
@@ -27,10 +27,6 @@ def process_single_df(split, column_dtypes, tsfresh_features, well_path):
         ),
         on='SK_Well', how='left'
     )
-
-    layer_vars = ['SK_Cyclic', 'SKLayers']
-    df[layer_vars] = df[layer_vars].fillna(method='ffill')
-    df[layer_vars] = df[layer_vars].fillna(method='bfill')
 
     df['SKLayers'] = df['SKLayers'].fillna(value='').str.split(';').map(len)
     df['CalendarDays'] = (df['SK_Calendar'] - df['CalendarStart']).dt.days
@@ -131,7 +127,7 @@ def train(args):
     tsfresh_features = read_cfg(cfg_dir / 'tsfresh_features.json')
     
     train_df, _ = make_processed_df(args.data_dir, 'train', args.num_workers, column_dtypes, tsfresh_features)
-    X_train = train_df.drop(columns=['CurrentMTTF', 'FailureDate', 'daysToFailure'])
+    X_train = train_df.drop(columns=['CurrentTTF', 'FailureDate', 'daysToFailure'])
     y_train = train_df['daysToFailure']
     cat_features = list(X_train.select_dtypes('object').columns)
     X_train[cat_features] = X_train[
@@ -157,7 +153,7 @@ def predict(args):
     model = CatBoostRegressor().load_model(args.model_dir / 'model.cbm')
     preds = model.predict(test_df)
     sub = pd.DataFrame({'filename': [well_path.name for well_path in well_paths], 'daysToFailure': preds})
-    sub.to_csv(args.output_dir / 'submission.csv', index=False)
+    sub.to_csv(args.output_dir / 'sub.csv', index=False)
 
 
 def main(args):
