@@ -112,9 +112,9 @@ def main(args):
     if len(df_true) != size_before:
         raise ValueError("В файле истинных значений и прогноза не совпадают имена файлов!")
 
-    if args.target == "CurrentMTTF":
-        df_true['CurrentMTTF_pred'] = df_true['daysFromLastStart'] + df_true['daysToFailure_pred']
-        print(metric(df_true['CurrentMTTF'], df_true['CurrentMTTF_pred']))
+    if args.target == "CurrentTTF":
+        df_true['CurrentTTF_pred'] = df_true['daysFromLastStart'] + df_true['daysToFailure_pred']
+        print(metric(df_true['CurrentTTF'], df_true['CurrentTTF_pred']))
     else:
         print(metric(df_true['daysToFailure'], df_true['daysToFailure_pred']))
 
@@ -136,7 +136,7 @@ def get_args(args=None):
     parser.add_argument(
         '-t', '--target',
         type=str, default='daysToFailure',
-        help='ЦП для метрики: daysToFailure или CurrentMTTF'
+        help='ЦП для метрики: daysToFailure или CurrentTTF'
     )
     parser.add_argument(
         '-m', '--metric',
