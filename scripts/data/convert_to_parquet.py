@@ -13,20 +13,20 @@ def zip_to_parquet(zip_path: str, output_path: str = None):
         filenames = z_file.getnames()
         selective_files = [f for f in filenames if "processed" in f and ".csv" in f]
         print(f"Amount of files to extract: {len(selective_files)}")
+        tmp_path = os.path.join(output_path, "tmp")
 
         for ix, file_path in enumerate(selective_files):
-            # print(z_file.read(file_path).items())
-            res = z_file.read(file_path).items()
+            z_file.extract(targets=file_path, path=tmp_path)
             file_name = os.path.basename(file_path)
             new_name = file_name.replace(".csv", ".parquet")
-            for fname, bio in res:
-                csv_file = pd.read_csv(bio, low_memory=False)
-                save_path = os.path.join(output_path, new_name)
-                # print(f"Saved to {save_path}")
-                csv_file.to_parquet(save_path)
+            csv_file = pd.read_csv(os.path.join(tmp_path, file_path), low_memory=False)
+            save_path = os.path.join(output_path, new_name)
+            # print(f"Saved to {save_path}")
+            csv_file.to_parquet(save_path)
+            os.remove(os.path.join(tmp_path, file_path))
 
             z_file.reset()
-            if ix == 1000:
+            if ix == 10:
                 break
 
 
