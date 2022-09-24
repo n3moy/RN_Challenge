@@ -104,7 +104,6 @@ async def zip_to_parquet(zip_path: str, output_path: str, folder_name: str):
             # print(f"{ix+1} block time: {(datetime.now() - s2).total_seconds()} / "
             #       f"{(datetime.now() - s3).total_seconds()}")
             # ---
-
             # Testing, may be removed
             # if ix == 1:
             #     break
