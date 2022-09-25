@@ -50,7 +50,7 @@ def collect_stats(
     save_outer_json_path = os.path.join(json_path, json_outer_name)
     print(f"{len(nan_cols)} NaN columns in total")
     with open(save_outer_json_path, "w") as j:
-        json.dump(nan_cols, j, indent=1)
+        json.dump(nan_cols, j, indent=1, ensure_ascii=False)
 
     out_report.loc["ВСЕГО", :] = group_num_features
     # out_report.append(group_num_features, ignore_index=True)

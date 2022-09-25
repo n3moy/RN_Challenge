@@ -41,24 +41,24 @@ class async_list():
 
 
 async def read_file(file_path, z_file, output_path, ix):
-    if ix % 10 == 0:
-        s2 = datetime.now()
+    # if ix % 10 == 0:
+    #     s2 = datetime.now()
     # res = z_file.read(file_path).items()
     res = await read_zip(file_path, z_file)
     file_name = os.path.basename(file_path)
     new_name = file_name.replace(".csv", ".parquet")
 
     for fname, bio in res:
-        if ix % 10 == 0:
-            s3 = datetime.now()
+        # if ix % 10 == 0:
+        #     s3 = datetime.now()
         csv_file = pd.read_csv(bio, low_memory=False)
         save_path = os.path.join(output_path, new_name)
         # print(f"Saved to {save_path}")
         csv_file.to_parquet(save_path)
     z_file.reset()
-    if ix % 10 == 0:
-        print(f"{ix + 1} block time: {(datetime.now() - s2).total_seconds()} / "
-            f"{(datetime.now() - s3).total_seconds()}")
+    # if ix % 10 == 0:
+    #     print(f"{ix + 1} block time: {(datetime.now() - s2).total_seconds()} / "
+    #         f"{(datetime.now() - s3).total_seconds()}")
     await asyncio.sleep(0)
 
 
@@ -73,7 +73,7 @@ async def zip_to_parquet(zip_path: str, output_path: str, folder_name: str):
     with py7zr.SevenZipFile(zip_path, "r") as z_file:
         filenames = z_file.getnames()
         selective_files = [f for f in filenames if folder_name in f and ".csv" in f]
-        print(f"Amount of files to extract: {len(selective_files)}")
+        # print(f"Amount of files to extract: {len(selective_files)}")
         # ix = 0
         tasks = [asyncio.ensure_future(read_file(file_path, z_file, output_path, ix)) for ix, file_path in enumerate(selective_files)]
         await asyncio.wait(tasks)
@@ -109,7 +109,7 @@ async def zip_to_parquet(zip_path: str, output_path: str, folder_name: str):
             #     break
             # ix += 1
 
-    # print(f"Total file {ix+1} time: {(datetime.now() - s1).total_seconds()}")
+    print(f"Total file time: {(datetime.now() - s1).total_seconds()}")
 
 
 def zip_to_parquet_v2(zip_path: str, output_path: str, folder_name: str):
@@ -119,14 +119,14 @@ def zip_to_parquet_v2(zip_path: str, output_path: str, folder_name: str):
         filenames = z_file.getnames()
         selective_files = [f for f in filenames if folder_name in f and ".csv" in f]
         print(f"Amount of files to extract: {len(selective_files)}")
-        print(f"Time to open 7zip: {(datetime.now() - s1).total_seconds()}")
+        # print(f"Time to open 7zip: {(datetime.now() - s1).total_seconds()}")
         for ix, file_path in enumerate(selective_files):
             # print(z_file.read(file_path).items())
             s2 = datetime.now()
             res = z_file.read(file_path).items()
             file_name = os.path.basename(file_path)
             new_name = file_name.replace(".csv", ".parquet")
-            print(f"Time to read {ix+1} file: {(datetime.now() - s2).total_seconds()}")
+            # print(f"Time to read {ix+1} file: {(datetime.now() - s2).total_seconds()}")
             for fname, bio in res:
                 csv_file = pd.read_csv(bio, low_memory=False)
                 save_path = os.path.join(output_path, new_name)
@@ -135,8 +135,8 @@ def zip_to_parquet_v2(zip_path: str, output_path: str, folder_name: str):
 
             z_file.reset()
             # Testing, may be removed
-            if ix == 1:
-                break
+            # if ix == 1:
+            #     break
 
     print(f"Total files {ix + 1} time: {(datetime.now() - s1).total_seconds()}")
 
@@ -161,13 +161,13 @@ def zip_to_parquet_v3(zip_path: str, output_path: str, folder_name: str):
 
             z_file.reset()
             # Testing, may be removed
-            if ix == 10:
+            if ix == 26:
                 break
 
 
 if __name__ == "__main__":
-    ZIP_PATH = "../../data/archive/train_dataset.7z"
-    OUT_PATH = "../../data/test"
-    FOLDER_NAME = "sample_test"
+    ZIP_PATH = "../../data/archive/test.7z"
+    OUT_PATH = "../../data/featured"
+    FOLDER_NAME = "processed_train"
     asyncio.run(zip_to_parquet(ZIP_PATH, OUT_PATH, FOLDER_NAME))
-    # zip_to_parquet_v2(ZIP_PATH, OUT_PATH)
+    # zip_to_parquet_v2(ZIP_PATH, OUT_PATH, FOLDER_NAME)
