@@ -1,6 +1,7 @@
 import os
 import json
-
+from typing import List
+from tqdm import tqdm
 import pandas as pd
 import numpy as np
 
@@ -73,7 +74,7 @@ def filter_numeric(
 def filter_data(
     data_folder_path: str,
     output_path: str,
-    dynamic_level: int
+    dynamic_level: float,
 ) -> None:
     dtypes_path = "../../configs/column_dtypes.json"
     test_cols_path = "../../configs/test_outer_nan_cols.json"
@@ -83,17 +84,24 @@ def filter_data(
     fnames = os.listdir(data_folder_path)
     description_file = pd.read_csv(description_path)
     descr_cols = description_file.columns
-    # Очень длинное название, пускай остается в таком виде
+    # Long name
     col_to_filter = descr_cols[-1]
+    description_file[col_to_filter] = description_file[col_to_filter].astype(np.float16)
     dynamic_features = description_file[description_file[col_to_filter] <= dynamic_level]["Название столбца"].values.tolist()
 
-    for fname in fnames:
+    print("Starting filtering data")
+    for fname in tqdm(fnames):
         file_path = os.path.join(data_folder_path, fname)
         data_file = pd.read_parquet(file_path, low_memory=False, dtype=columns_dtypes)
-        # Saving target so I dont lose it
+        data_file["SK_Calendar"] = pd.to_datetime(data_file["SK_Calendar"])
+        data_file = data_file.set_index("SK_Calendar")
+        # Saving target so I don't lose it while filtering
         target = data_file["daysToFailure"]
+        # Step 1 - Take dynamic features from features description with dynamic <= 'dynamic_level'
         dynamic_data = data_file.loc[:, dynamic_features]
+        # Step 2 - Take columns that indeed present in tests samples
         test_filtered_data = filter_data_by_test(dynamic_data, test_cols_path)
+        # Step 3 - Take only numeric columns, categorical features left for later use and another processing
         numeric_data = filter_numeric(test_filtered_data)
         numeric_data["daysToFailure"] = target
 
@@ -101,105 +109,68 @@ def filter_data(
         numeric_data.to_parquet(save_path, index=False)
 
 
-def build_features(
-    input_path: str,
-    output_path: str
+def build_window_features(
+    input_data: pd.DataFrame,
+    target_columns: List[str]
 ):
-    fnames = os.listdir(input_path)
+    windows = [3, 7, 14, 28]
+    out_data = input_data.copy()
 
-    for filename in fnames:
-        file_path = os.path.join(input_path, filename)
-        data_file = pd.read_csv(file_path, parse_dates=["time"])
-        data_file = data_file.set_index("time")
-        data_file = reduce_mem_usage(data_file)
+    print("Starting calculation window features")
+    for col in tqdm(target_columns):
+        for window in windows:
+            out_data[f"{col}_mean_{window}"] = (out_data[col].rolling(min_periods=1, window=window).mean())
+            out_data[f"{col}_std_{window}"] = (out_data[col].rolling(min_periods=1, window=window).std())
+            out_data[f"{col}_max_{window}"] = (out_data[col].rolling(min_periods=1, window=window).max())
+            out_data[f"{col}_min_{window}"] = (out_data[col].rolling(min_periods=1, window=window).min())
+            out_data[f"{col}_spk_{window}"] = np.where(
+                (out_data[f"{col}_mean_{window}"] == 0), 0, out_data[col] / out_data[f"{col}_mean_{window}"]
+            )
+        # out_data[f"{col}_deriv"] = pd.Series(np.gradient(out_data[col]), out_data.index)
+        # out_data[f"{col}_squared"] = np.power(out_data[col], 2)
+        # out_data[f"{col}_root"] = np.power(out_data[col], 0.5)
 
-        # Current and voltage unbalance
-        voltage_names = ["voltageAB", "voltageBC", "voltageCA"]
-        current_names = ["op_current1", "op_current2", "op_current3"]
-        voltages = data_file[voltage_names]
-        currents = data_file[current_names]
-        mean_voltage = voltages.mean(axis=1)
-        mean_current = currents.mean(axis=1)
-        deviation_voltage = voltages.sub(mean_voltage, axis=0).abs()
-        deviation_current = currents.sub(mean_current, axis=0).abs()
+    return out_data
 
-        data_file["voltage_unbalance"] = (
-                deviation_voltage.max(axis=1).div(mean_voltage, axis=0) * 100
-        )
-        data_file["current_unbalance"] = (
-                deviation_current.max(axis=1).div(mean_current, axis=0) * 100
-        )
 
-        # Impute zeros where currents are zeros
-        data_file["current_unbalance"] = data_file["current_unbalance"].fillna(0)
-        # Impute zeros where voltages are zeros
-        data_file["voltage_unbalance"] = data_file["voltage_unbalance"].fillna(0)
-        # I don't need currents anymore cause active power present variability
-        # Lets keep only one voltage and current to save variability
-        data_file["voltage"] = data_file["voltageAB"]
-        data_file["current"] = data_file["op_current1"]
-        data_file["resistance"] = np.where(
-            (data_file["current"] == 0), 0, data_file["voltage"].div(data_file["current"], axis=0)
-        )
+def build_features(
+    data_path: str,
+    output_path: str,
+    dynamic_level: float,
+    do_filter: bool,
+    filtered_data_path: str = None,
+):
+    if do_filter:
+        filter_data(data_path, filtered_data_path, dynamic_level)
+        fnames = os.listdir(filtered_data_path)
+        calc_path = filtered_data_path
+    else:
+        fnames = os.listdir(data_path)
+        calc_path = data_path
 
-        # Testing all ideas to choose best ones
-        data_file["power_A"] = data_file["op_current1"] * data_file["voltageAB"] / 1000
-        data_file["power_B"] = data_file["op_current2"] * data_file["voltageBC"] / 1000
-        data_file["power_C"] = data_file["op_current3"] * data_file["voltageCA"] / 1000
-        data_file["theory_power"] = data_file["power_A"] + data_file["power_B"] + data_file["power_C"]
-        data_file["power_diff"] = data_file["active_power"] - data_file["theory_power"]
+    for fname in fnames:
+        file_path = os.path.join(calc_path, fname)
+        data_file = pd.read_parquet(file_path, parse_dates=["SK_Calendar"])
+        data_file = data_file.set_index("SK_Calendar")
+        # data_file = reduce_mem_usage(data_file)
+        window_columns = data_file.drop("daysToFailure", axis=1).columns.tolist()
+        window_featured_file = build_window_features(data_file, window_columns)
 
-        data_file["power_lossesA"] = np.power(data_file["op_current1"], 2) * data_file["resistance"]
-        data_file["power_lossesB"] = np.power(data_file["op_current2"], 2) * data_file["resistance"]
-        data_file["power_lossesC"] = np.power(data_file["op_current3"], 2) * data_file["resistance"]
+        save_path = os.path.join(output_path, fname)
+        window_featured_file.to_csv(save_path)
 
-        # data_file["watercut"] = 1 - data_file["oil_rate"] / data_file["liquid_rate"]
-        data_file["pressure_drop"] = data_file["intake_pressure"] - data_file["line_pressure"]
-        data_file["theory_rate"] = data_file["pressure_drop"] * 8
-        data_file["rate_diff"] = data_file["liquid_rate"] - data_file["theory_rate"]
 
-        data_file["freq_ratio"] = data_file["frequency"] / 50
-        data_file["freq_squared_ratio"] = np.power(data_file["frequency"] / 50, 2)
-        data_file["freq_cubic_ratio"] = np.power(data_file["frequency"] / 50, 3)
-        k = 500
-        data_file["skin"] = (k - data_file["intake_pressure"] - data_file["liquid_rate"]) / data_file["liquid_rate"]
+if __name__ == "__main__":
+    DATA_PATH = "../../data/processed"
+    OUT_PATH = "../../data/featured"
+    # 1 - постоянно изменяющийся (ежедневно),
+    # 2.1 - периодически изменяющийся (допустимо изменение раз в неделю),
+    # 2.2 - периодически изменяющийся (допустимо изменение раз в месяц),
+    # 3.1 - статичный (обязательное изменение после останова / ремонта),
+    # 3.2 - статичный (возможное изменение после останова / ремонта),
+    # 3.3 - статичный (не изменяется)
+    DYNAMIC_LEVEL = 2.2
+    DO_FILTER = True
+    FILTERED_PATH = "../../data/filtered"
+    build_features(DATA_PATH, OUT_PATH, DYNAMIC_LEVEL, DO_FILTER, FILTERED_PATH)
 
-        # Calculating derivatives and statistics
-        if COLS_TO_CALC is None:
-            COLS_TO_CALC = [
-                "current",
-                "voltage",
-                "active_power",
-                "frequency",
-                "electricity_gage",
-                # "motor_load",    # Mistake in initial data_file, so I don't need it here. Should be resolved some day
-                "pump_temperature",
-            ]
-
-        windows = [60 * 14 * 3]
-        # windows = [60 * 14 * 3, 60 * 14 * 1, 60 * 14 * 7]
-        for col in COLS_TO_CALC:
-            for window in windows:
-                data_file[f"{col}_rol_mean_{window}"] = (
-                    data_file[col].rolling(min_periods=1, window=window).mean()
-                )
-                data_file[f"{col}_rol_std_{window}"] = (
-                    data_file[col].rolling(min_periods=1, window=window).std()
-                )
-                data_file[f"{col}_rol_max_{window}"] = (
-                    data_file[col].rolling(min_periods=1, window=window).max()
-                )
-                data_file[f"{col}_rol_min_{window}"] = (
-                    data_file[col].rolling(min_periods=1, window=window).min()
-                )
-                data_file[f"{col}_spk_{window}"] = np.where(
-                    (data_file[f"{col}_rol_mean_{window}"] == 0), 0, data_file[col] / data_file[f"{col}_rol_mean_{window}"]
-                )
-            data_file[f"{col}_deriv"] = pd.Series(np.gradient(data_file[col]), data_file.index)
-            # data_file[col] = data_file[col].rolling(min_periods=1, window=30).mean()
-            data_file[f"{col}_squared"] = np.power(data_file[col], 2)
-            data_file[f"{col}_root"] = np.power(data_file[col], 0.5)
-
-        new_name = filename[:-4] + "_featured.csv"
-        save_path = os.path.join(output_path, new_name)
-        data_file.to_csv(save_path)
