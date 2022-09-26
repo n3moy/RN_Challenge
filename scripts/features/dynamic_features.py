@@ -4,6 +4,8 @@ from typing import List
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
+import warnings
+warnings.filterwarnings("ignore")
 
 
 def reduce_mem_usage(
@@ -71,6 +73,28 @@ def filter_numeric(
     return input_data.select_dtypes(include=[float, int])
 
 
+def get_dynamic_features(
+    description_path: str = "../../reports/Описание признаков.csv",
+    dynamic_level: float = 2.2
+) -> pd.DataFrame:
+    description_file = pd.read_csv(description_path)
+    descr_cols = description_file.columns
+    # Long name
+    col_to_filter = descr_cols[-1]
+    # Only column with dynamic level = 1
+    highly_dynamic_col = descr_cols[-2]
+
+    description_file[col_to_filter] = description_file[col_to_filter].replace("na", np.nan)
+    description_file[col_to_filter] = description_file[col_to_filter].fillna(3)
+    description_file[col_to_filter] = description_file[col_to_filter].astype(np.float16)
+
+    dynamic_features = description_file[
+        (description_file[col_to_filter] <= dynamic_level) | (description_file[highly_dynamic_col] <= dynamic_level)]\
+        ["Название столбца"].values.tolist()
+
+    return dynamic_features
+
+
 def filter_data(
     data_folder_path: str,
     output_path: str,
@@ -78,46 +102,69 @@ def filter_data(
 ) -> None:
     dtypes_path = "../../configs/column_dtypes.json"
     test_cols_path = "../../configs/test_outer_nan_cols.json"
-    description_path = "../../reports/Описание признаков.csv"
+    save_cols_path = "../../configs/save_dynamic_cols.json"
+    # description_path = "../../reports/Описание признаков.csv"
 
     columns_dtypes = read_cfg(dtypes_path)
     fnames = os.listdir(data_folder_path)
-    description_file = pd.read_csv(description_path)
-    descr_cols = description_file.columns
-    # Long name
-    col_to_filter = descr_cols[-1]
-    description_file[col_to_filter] = description_file[col_to_filter].astype(np.float16)
-    dynamic_features = description_file[description_file[col_to_filter] <= dynamic_level]["Название столбца"].values.tolist()
+    # description_file = pd.read_csv(description_path)
+    # descr_cols = description_file.columns
+    # # Long name
+    # col_to_filter = descr_cols[-1]
+    # # Only column with dynamic level = 1
+    # highly_dynamic_col = descr_cols[-2]
+    #
+    # description_file[col_to_filter] = description_file[col_to_filter].replace("na", np.nan)
+    # description_file[col_to_filter] = description_file[col_to_filter].fillna(3)
+    # description_file[col_to_filter] = description_file[col_to_filter].astype(np.float16)
+    # dynamic_features = description_file[
+    #     (description_file[col_to_filter] <= dynamic_level) | (description_file[highly_dynamic_col] <= dynamic_level)]\
+    #     ["Название столбца"].values.tolist()
 
+    # Save them cause they are not classified by dynamic in description hence are removed after filtering in step 1
+    save_features = read_cfg(save_cols_path)
+    dynamic_features = get_dynamic_features(dynamic_level=dynamic_level)
+    print(f"DYNAMIC FEATURES amount {len(dynamic_features)}")
+    # print(dynamic_features)
     print("Starting filtering data")
     for fname in tqdm(fnames):
         file_path = os.path.join(data_folder_path, fname)
-        data_file = pd.read_parquet(file_path, low_memory=False, dtype=columns_dtypes)
-        data_file["SK_Calendar"] = pd.to_datetime(data_file["SK_Calendar"])
-        data_file = data_file.set_index("SK_Calendar")
-        # Saving target so I don't lose it while filtering
-        target = data_file["daysToFailure"]
+        data_file = pd.read_parquet(file_path)
+
+        for k, v in columns_dtypes.items():
+            try:
+                data_file[k] = data_file[k].astype(v)
+            except KeyError:
+                # print(f"{k} not found in file")
+                continue
+
+        save_vals = data_file[save_features]
         # Step 1 - Take dynamic features from features description with dynamic <= 'dynamic_level'
         dynamic_data = data_file.loc[:, dynamic_features]
+        # print(f"COLUMNS AFTER DYNAMIC FILTER {dynamic_data.shape[1]}\n{dynamic_data.columns}")
+        dynamic_data["SK_Calendar"] = pd.to_datetime(dynamic_data["SK_Calendar"])
+        dynamic_data = dynamic_data.set_index("SK_Calendar")
         # Step 2 - Take columns that indeed present in tests samples
         test_filtered_data = filter_data_by_test(dynamic_data, test_cols_path)
+        # print(f"COLUMNS AFTER TEST FILTER {test_filtered_data.shape[1]}\n{test_filtered_data.columns}")
         # Step 3 - Take only numeric columns, categorical features left for later use and another processing
         numeric_data = filter_numeric(test_filtered_data)
-        numeric_data["daysToFailure"] = target
+        # print(f"COLUMNS AFTER NUMERIC FILTER {numeric_data.shape[1]}\n{numeric_data.columns}")
+        # OK lets take them back
+        numeric_data[save_features] = save_vals
 
         save_path = os.path.join(output_path, fname)
-        numeric_data.to_parquet(save_path, index=False)
+        numeric_data.to_parquet(save_path)
 
 
 def build_window_features(
     input_data: pd.DataFrame,
     target_columns: List[str]
 ):
-    windows = [3, 7, 14, 28]
+    windows = [7, 14, 28]
     out_data = input_data.copy()
 
-    print("Starting calculation window features")
-    for col in tqdm(target_columns):
+    for col in target_columns:
         for window in windows:
             out_data[f"{col}_mean_{window}"] = (out_data[col].rolling(min_periods=1, window=window).mean())
             out_data[f"{col}_std_{window}"] = (out_data[col].rolling(min_periods=1, window=window).std())
@@ -138,7 +185,7 @@ def build_features(
     output_path: str,
     dynamic_level: float,
     do_filter: bool,
-    filtered_data_path: str = None,
+    filtered_data_path: str = None
 ):
     if do_filter:
         filter_data(data_path, filtered_data_path, dynamic_level)
@@ -148,16 +195,19 @@ def build_features(
         fnames = os.listdir(data_path)
         calc_path = data_path
 
-    for fname in fnames:
+    # Columns in total 2657
+    print("Starting calculation window features")
+    for fname in tqdm(fnames[: 10]):
         file_path = os.path.join(calc_path, fname)
-        data_file = pd.read_parquet(file_path, parse_dates=["SK_Calendar"])
+        data_file = pd.read_parquet(file_path)
+        data_file["SK_Calendar"] = pd.to_datetime(data_file["SK_Calendar"])
         data_file = data_file.set_index("SK_Calendar")
         # data_file = reduce_mem_usage(data_file)
         window_columns = data_file.drop("daysToFailure", axis=1).columns.tolist()
         window_featured_file = build_window_features(data_file, window_columns)
 
         save_path = os.path.join(output_path, fname)
-        window_featured_file.to_csv(save_path)
+        window_featured_file.to_parquet(save_path)
 
 
 if __name__ == "__main__":
@@ -169,8 +219,9 @@ if __name__ == "__main__":
     # 3.1 - статичный (обязательное изменение после останова / ремонта),
     # 3.2 - статичный (возможное изменение после останова / ремонта),
     # 3.3 - статичный (не изменяется)
-    DYNAMIC_LEVEL = 2.2
-    DO_FILTER = True
+    # Условие:    ... <= dynamic level
+    DYNAMIC_LEVEL = 3.1
+    DO_FILTER = False
     FILTERED_PATH = "../../data/filtered"
-    build_features(DATA_PATH, OUT_PATH, DYNAMIC_LEVEL, DO_FILTER, FILTERED_PATH)
+    build_features(FILTERED_PATH, OUT_PATH, DYNAMIC_LEVEL, DO_FILTER, FILTERED_PATH)
 
