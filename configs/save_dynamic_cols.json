@@ -29,5 +29,6 @@
  "LP5_LiquidRateMER_m3_d",
  "LP5_Share_LiquidRateMER_m3_d",
  "MotorCurrent_a",
- "EnergyCons_kWt_h_d"
+ "EnergyCons_kWt_h_d",
+ "daysToFailure"
 ]

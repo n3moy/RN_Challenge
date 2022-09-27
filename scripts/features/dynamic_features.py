@@ -110,7 +110,7 @@ def filter_data(
     # Save them cause they are not classified by dynamic in description hence might be removed after filtering in step 1
     save_features = read_cfg(save_cols_path)
     dynamic_features = get_dynamic_features(dynamic_level=dynamic_level)
-    print(f"DYNAMIC FEATURES amount {len(dynamic_features)}")
+    print(f"DYNAMIC FEATURES {len(dynamic_features)}")
     # print(dynamic_features)
     print("Starting filtering data")
     for fname in tqdm(fnames):
