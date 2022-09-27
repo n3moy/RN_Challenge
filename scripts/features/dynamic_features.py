@@ -63,8 +63,6 @@ def filter_data_by_test(
     # COLS_PATH = "../configs/test_outer_nan_cols.json"
     test_nan_cols = read_cfg(test_cols_path)
     out_data = input_data.loc[:, ~input_data.columns.isin(test_nan_cols)]
-    # This columns has leak and not used in test sample
-    out_data = out_data.drop("CurrentTTF", axis=1)
 
     return out_data
 
@@ -130,7 +128,7 @@ def filter_data(
         # Step 1 - Take dynamic features from features description with dynamic <= 'dynamic_level'
         dynamic_data = data_file.loc[:, dynamic_features]
         # print(f"COLUMNS AFTER DYNAMIC FILTER {dynamic_data.shape[1]}\n{dynamic_data.columns}")
-        dynamic_data["SK_Calendar"] = pd.to_datetime(dynamic_data["SK_Calendar"])
+        dynamic_data["SK_Calendar"] = pd.to_datetime(data_file["SK_Calendar"])
         dynamic_data = dynamic_data.set_index("SK_Calendar")
         # Step 2 - Take columns that indeed present in tests samples
         test_filtered_data = filter_data_by_test(dynamic_data, test_cols_path)
