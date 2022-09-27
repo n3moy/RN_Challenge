@@ -63,6 +63,8 @@ def filter_data_by_test(
     # COLS_PATH = "../configs/test_outer_nan_cols.json"
     test_nan_cols = read_cfg(test_cols_path)
     out_data = input_data.loc[:, ~input_data.columns.isin(test_nan_cols)]
+    # This columns has leak and not used in test sample
+    out_data = out_data.drop("CurrentTTF", axis=1)
 
     return out_data
 
@@ -107,21 +109,7 @@ def filter_data(
 
     columns_dtypes = read_cfg(dtypes_path)
     fnames = os.listdir(data_folder_path)
-    # description_file = pd.read_csv(description_path)
-    # descr_cols = description_file.columns
-    # # Long name
-    # col_to_filter = descr_cols[-1]
-    # # Only column with dynamic level = 1
-    # highly_dynamic_col = descr_cols[-2]
-    #
-    # description_file[col_to_filter] = description_file[col_to_filter].replace("na", np.nan)
-    # description_file[col_to_filter] = description_file[col_to_filter].fillna(3)
-    # description_file[col_to_filter] = description_file[col_to_filter].astype(np.float16)
-    # dynamic_features = description_file[
-    #     (description_file[col_to_filter] <= dynamic_level) | (description_file[highly_dynamic_col] <= dynamic_level)]\
-    #     ["Название столбца"].values.tolist()
-
-    # Save them cause they are not classified by dynamic in description hence are removed after filtering in step 1
+    # Save them cause they are not classified by dynamic in description hence might be removed after filtering in step 1
     save_features = read_cfg(save_cols_path)
     dynamic_features = get_dynamic_features(dynamic_level=dynamic_level)
     print(f"DYNAMIC FEATURES amount {len(dynamic_features)}")
@@ -220,8 +208,8 @@ if __name__ == "__main__":
     # 3.2 - статичный (возможное изменение после останова / ремонта),
     # 3.3 - статичный (не изменяется)
     # Условие:    ... <= dynamic level
-    DYNAMIC_LEVEL = 3.1
-    DO_FILTER = False
+    DYNAMIC_LEVEL = 2.2
+    DO_FILTER = True
     FILTERED_PATH = "../../data/filtered"
-    build_features(FILTERED_PATH, OUT_PATH, DYNAMIC_LEVEL, DO_FILTER, FILTERED_PATH)
+    build_features(DATA_PATH, OUT_PATH, DYNAMIC_LEVEL, DO_FILTER, FILTERED_PATH)
 
