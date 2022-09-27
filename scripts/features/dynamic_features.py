@@ -56,27 +56,10 @@ def read_cfg(cfg_path):
     return cfg
 
 
-def filter_data_by_test(
-    input_data: pd.DataFrame,
-    test_cols_path: str
-) -> pd.DataFrame:
-    # COLS_PATH = "../configs/test_outer_nan_cols.json"
-    test_nan_cols = read_cfg(test_cols_path)
-    out_data = input_data.loc[:, ~input_data.columns.isin(test_nan_cols)]
-
-    return out_data
-
-
-def filter_numeric(
-    input_data: pd.DataFrame,
-) -> pd.DataFrame:
-    return input_data.select_dtypes(include=[float, int])
-
-
 def get_dynamic_features(
     description_path: str = "../../reports/Описание признаков.csv",
     dynamic_level: float = 2.2
-) -> pd.DataFrame:
+) -> List[str]:
     description_file = pd.read_csv(description_path)
     descr_cols = description_file.columns
     # Long name
@@ -96,51 +79,30 @@ def get_dynamic_features(
 
 
 def filter_data(
-    data_folder_path: str,
-    output_path: str,
-    dynamic_level: float,
-) -> None:
-    dtypes_path = "../../configs/column_dtypes.json"
-    test_cols_path = "../../configs/test_outer_nan_cols.json"
-    save_cols_path = "../../configs/save_dynamic_cols.json"
-    # description_path = "../../reports/Описание признаков.csv"
+    input_data: pd.DataFrame,
+    save_features: List[str],
+    dynamic_features: List[str],
+    test_nan_features: List[str],
+) -> pd.DataFrame:
+    filter_file = input_data.copy()
 
-    columns_dtypes = read_cfg(dtypes_path)
-    fnames = os.listdir(data_folder_path)
-    # Save them cause they are not classified by dynamic in description hence might be removed after filtering in step 1
-    save_features = read_cfg(save_cols_path)
-    dynamic_features = get_dynamic_features(dynamic_level=dynamic_level)
-    print(f"DYNAMIC FEATURES {len(dynamic_features)}")
-    # print(dynamic_features)
-    print("Starting filtering data")
-    for fname in tqdm(fnames):
-        file_path = os.path.join(data_folder_path, fname)
-        data_file = pd.read_parquet(file_path)
+    save_vals = filter_file[save_features]
 
-        for k, v in columns_dtypes.items():
-            try:
-                data_file[k] = data_file[k].astype(v)
-            except KeyError:
-                # print(f"{k} not found in file")
-                continue
+    # Step 1 - Take dynamic features from features description with dynamic <= 'dynamic_level'
+    dynamic_data = filter_file.loc[:, dynamic_features]
+    dynamic_data["SK_Calendar"] = pd.to_datetime(filter_file["SK_Calendar"])
+    dynamic_data = dynamic_data.set_index("SK_Calendar")
 
-        save_vals = data_file[save_features]
-        # Step 1 - Take dynamic features from features description with dynamic <= 'dynamic_level'
-        dynamic_data = data_file.loc[:, dynamic_features]
-        # print(f"COLUMNS AFTER DYNAMIC FILTER {dynamic_data.shape[1]}\n{dynamic_data.columns}")
-        dynamic_data["SK_Calendar"] = pd.to_datetime(data_file["SK_Calendar"])
-        dynamic_data = dynamic_data.set_index("SK_Calendar")
-        # Step 2 - Take columns that indeed present in tests samples
-        test_filtered_data = filter_data_by_test(dynamic_data, test_cols_path)
-        # print(f"COLUMNS AFTER TEST FILTER {test_filtered_data.shape[1]}\n{test_filtered_data.columns}")
-        # Step 3 - Take only numeric columns, categorical features left for later use and another processing
-        numeric_data = filter_numeric(test_filtered_data)
-        # print(f"COLUMNS AFTER NUMERIC FILTER {numeric_data.shape[1]}\n{numeric_data.columns}")
-        # OK lets take them back
-        numeric_data[save_features] = save_vals
+    # Step 2 - Take columns that indeed present in tests samples
+    test_filtered_data = dynamic_data.loc[:, ~dynamic_data.columns.isin(test_nan_features)]
 
-        save_path = os.path.join(output_path, fname)
-        numeric_data.to_parquet(save_path)
+    # Step 3 - Take only numeric columns, categorical features left for later use and another processing
+    numeric_data = test_filtered_data.select_dtypes(include=[float, int])
+
+    # Let's take them back
+    numeric_data[save_features] = save_vals
+
+    return numeric_data
 
 
 def build_window_features(
@@ -167,38 +129,21 @@ def build_window_features(
 
 
 def build_features(
-    data_path: str,
-    output_path: str,
-    dynamic_level: float,
-    do_filter: bool,
-    filtered_data_path: str = None
-):
-    if do_filter:
-        filter_data(data_path, filtered_data_path, dynamic_level)
-        fnames = os.listdir(filtered_data_path)
-        calc_path = filtered_data_path
-    else:
-        fnames = os.listdir(data_path)
-        calc_path = data_path
+    input_data: pd.DataFrame,
+    window_columns: List[str] = None
+) -> pd.DataFrame:
+    data_file = input_data.copy()
+    # data_file = reduce_mem_usage(data_file)
+    if window_columns is None:
+        window_columns = [col for col in data_file.columns if "failure" not in col.lower()]
+        # window_columns = data_file.drop("daysToFailure", axis=1).columns.tolist()
+    window_featured_file = build_window_features(data_file, window_columns)
 
-    # Columns in total 2657
-    print("Starting calculation window features")
-    for fname in tqdm(fnames[: 10]):
-        file_path = os.path.join(calc_path, fname)
-        data_file = pd.read_parquet(file_path)
-        data_file["SK_Calendar"] = pd.to_datetime(data_file["SK_Calendar"])
-        data_file = data_file.set_index("SK_Calendar")
-        # data_file = reduce_mem_usage(data_file)
-        window_columns = data_file.drop("daysToFailure", axis=1).columns.tolist()
-        window_featured_file = build_window_features(data_file, window_columns)
-
-        save_path = os.path.join(output_path, fname)
-        window_featured_file.to_parquet(save_path)
+    return window_featured_file
 
 
 if __name__ == "__main__":
-    DATA_PATH = "../../data/processed"
-    OUT_PATH = "../../data/featured"
+    DATA_FILE = pd.read_parquet("../../data/processed/00d89d23.parquet")
     # 1 - постоянно изменяющийся (ежедневно),
     # 2.1 - периодически изменяющийся (допустимо изменение раз в неделю),
     # 2.2 - периодически изменяющийся (допустимо изменение раз в месяц),
@@ -206,8 +151,18 @@ if __name__ == "__main__":
     # 3.2 - статичный (возможное изменение после останова / ремонта),
     # 3.3 - статичный (не изменяется)
     # Условие:    ... <= dynamic level
-    DYNAMIC_LEVEL = 2.2
-    DO_FILTER = True
-    FILTERED_PATH = "../../data/filtered"
-    build_features(DATA_PATH, OUT_PATH, DYNAMIC_LEVEL, DO_FILTER, FILTERED_PATH)
+    DYNAMIC_LEVEL = 3.1
+    save_features = read_cfg("../../configs/save_dynamic_cols.json")
+    dynamic_features = get_dynamic_features(dynamic_level=DYNAMIC_LEVEL)
+    test_nan_features = read_cfg("../../configs/test_outer_nan_cols.json")
+    filtered_data = filter_data(DATA_FILE, save_features, dynamic_features, test_nan_features)
+    featured = build_features(filtered_data)
+    n_rows = featured.shape[0]
+    count = 0
+    for col in featured.columns:
+        nans = featured[col].isna().sum()
+        if nans == n_rows:
+            count += 1
+    print(featured.shape)
+    print(f"Fully nan cols: {count}")
 
