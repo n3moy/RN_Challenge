@@ -42,7 +42,7 @@ def build_window_features(
     return out_data
 
 
-def process_single_df(column_dtypes, tsfresh_features, well_path):
+def process_single_df(split, column_dtypes, tsfresh_features, well_path):
     df = pd.read_csv(well_path, low_memory=False, dtype=column_dtypes)
 
     df['SK_Calendar'] = pd.to_datetime(df['SK_Calendar'], format='%Y-%m-%d')
