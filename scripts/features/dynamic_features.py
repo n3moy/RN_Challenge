@@ -1,7 +1,5 @@
-import os
 import json
 from typing import List
-from tqdm import tqdm
 import pandas as pd
 import numpy as np
 import warnings
@@ -82,7 +80,7 @@ def filter_data(
     input_data: pd.DataFrame,
     save_features: List[str],
     dynamic_features: List[str],
-    test_nan_features: List[str],
+    test_nan_features: List[str]
 ) -> pd.DataFrame:
     filter_file = input_data.copy()
 
@@ -143,6 +141,7 @@ def build_features(
 
 
 if __name__ == "__main__":
+    # FOR TESTING PURPOSES
     DATA_FILE = pd.read_parquet("../../data/processed/00d89d23.parquet")
     # 1 - постоянно изменяющийся (ежедневно),
     # 2.1 - периодически изменяющийся (допустимо изменение раз в неделю),

@@ -10,12 +10,14 @@ from multiprocessing import Pool
 from pathlib import Path
 
 from catboost import CatBoostRegressor
-from tsfresh import extract_features
-from tsfresh.feature_extraction import MinimalFCParameters
+# from tsfresh import extract_features
+# from tsfresh.feature_extraction import MinimalFCParameters
 from tqdm import tqdm
 
+from scripts.features.dynamic_features import build_window_features
 
-def process_single_df(split, column_dtypes, tsfresh_features, well_path):
+
+def process_single_df(column_dtypes, tsfresh_features, well_path):
     df = pd.read_csv(well_path, low_memory=False, dtype=column_dtypes)
 
     df['SK_Calendar'] = pd.to_datetime(df['SK_Calendar'], format='%Y-%m-%d')
@@ -35,67 +37,8 @@ def process_single_df(split, column_dtypes, tsfresh_features, well_path):
     df[tsfresh_features] = df[tsfresh_features].fillna(method='bfill')
     df[tsfresh_features] = df[tsfresh_features].fillna(value=-1)
 
-    if split == 'train':
-        X_list = []
-        min_date = df['SK_Calendar'].min()
-        max_date = df['SK_Calendar'].max()
-        date_range = pd.date_range(start=min_date, end=max_date, freq='30D')
-        
-        for date in date_range:
-            df_filtered = df[df['SK_Calendar'] <= date]
-            start_date = df_filtered['lastStartDate'].max()
-            df_filtered = df_filtered[df_filtered['lastStartDate'] == start_date]
-            X = df_filtered[
-                ['SK_Well', 'CalendarDays']
-            ].groupby(by='SK_Well').max()
-            
-            X = X.merge(df_filtered, on=['SK_Well', 'CalendarDays'])
-            
-            if not len(X):
-                continue
-            elif X['SK_Calendar'].iloc[0] != date:
-                break
-
-            df_extracted_features = extract_features(
-                df_filtered[['SK_Well', 'CalendarDays'] + tsfresh_features],
-                default_fc_parameters=MinimalFCParameters(),
-                column_id='SK_Well',
-                column_sort='CalendarDays',
-                disable_progressbar=True,
-                n_jobs=1
-            )
-            df_extracted_features = df_extracted_features.reset_index().rename(
-                columns={'index': 'SK_Well'}
-            )
-            X = X.merge(df_extracted_features, on='SK_Well')
-            X_list.append(X)
-        return pd.concat(X_list) if X_list else None
-    
-    elif split == 'test':
-        start_date = df['lastStartDate'].max()
-        if start_date is pd.NaT:
-            start_date = df['SK_Calendar'].min()
-            df['lastStartDate'] = start_date
-        
-        df_filtered = df[df['lastStartDate'] == start_date]
-        X = df_filtered[
-            ['SK_Well', 'CalendarDays']
-        ].groupby(by='SK_Well').max()
-        X = X.merge(df_filtered, on=['SK_Well', 'CalendarDays'])
-
-        df_extracted_features = extract_features(
-            df_filtered[['SK_Well', 'CalendarDays'] + tsfresh_features],
-            default_fc_parameters=MinimalFCParameters(),
-            column_id='SK_Well',
-            column_sort='CalendarDays',
-            disable_progressbar=True,
-            n_jobs=1
-        )
-        df_extracted_features = df_extracted_features.reset_index().rename(
-            columns={'index': 'SK_Well'}
-        )
-        X = X.merge(df_extracted_features, on='SK_Well')
-        return X
+    df = build_window_features(df, tsfresh_features)
+    return df
 
 
 def make_processed_df(data_dir, split, num_workers, column_dtypes, tsfresh_features):
@@ -125,7 +68,7 @@ def train(args):
     cfg_dir = Path(__file__).parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
     tsfresh_features = read_cfg(cfg_dir / 'tsfresh_features.json')
-    
+
     train_df, _ = make_processed_df(args.data_dir, 'train', args.num_workers, column_dtypes, tsfresh_features)
     X_train = train_df.drop(columns=['CurrentTTF', 'FailureDate', 'daysToFailure'])
     y_train = train_df['daysToFailure']
@@ -144,7 +87,7 @@ def predict(args):
     cfg_dir = Path(__file__).parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
     tsfresh_features = read_cfg(cfg_dir / 'tsfresh_features.json')
-    
+
     test_df, well_paths = make_processed_df(args.data_dir, 'test', args.num_workers, column_dtypes, tsfresh_features)
     cat_features = list(test_df.select_dtypes('object').columns)
     test_df[cat_features] = test_df[
