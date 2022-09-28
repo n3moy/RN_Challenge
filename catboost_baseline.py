@@ -78,8 +78,8 @@ def make_processed_df(data_dir, split, num_workers, column_dtypes, tsfresh_featu
 
     well_df_list = [well_df for well_df in well_df_list if well_df is not None]
     df = pd.concat(well_df_list, ignore_index=True)
-    if split == 'test':
-        assert len(df) == len(well_paths)
+    # if split == 'test':
+    #     assert len(df) == len(well_paths)
     return df, well_paths
 
 
