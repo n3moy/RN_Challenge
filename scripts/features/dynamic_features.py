@@ -107,9 +107,9 @@ def build_window_features(
     input_data: pd.DataFrame,
     target_columns: List[str]
 ):
-    windows = [7, 14, 28]
+    windows = [3, 7, 14]
     out_data = input_data.copy()
-
+    out_cols = []
     for col in target_columns:
         for window in windows:
             out_data[f"{col}_mean_{window}"] = (out_data[col].rolling(min_periods=1, window=window).mean())
@@ -119,11 +119,18 @@ def build_window_features(
             out_data[f"{col}_spk_{window}"] = np.where(
                 (out_data[f"{col}_mean_{window}"] == 0), 0, out_data[col] / out_data[f"{col}_mean_{window}"]
             )
+            out_cols.extend(
+                [f"{col}_mean_{window}",
+                f"{col}_std_{window}",
+                f"{col}_max_{window}",
+                f"{col}_min_{window}",
+                f"{col}_spk_{window}"]
+            )
         # out_data[f"{col}_deriv"] = pd.Series(np.gradient(out_data[col]), out_data.index)
         # out_data[f"{col}_squared"] = np.power(out_data[col], 2)
         # out_data[f"{col}_root"] = np.power(out_data[col], 0.5)
 
-    return out_data
+    return out_data, out_cols
 
 
 def build_features(
