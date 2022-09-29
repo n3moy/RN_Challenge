@@ -105,12 +105,12 @@ def train(args):
     X_train = train_df.drop(columns=['CurrentTTF', 'FailureDate', 'daysToFailure'])
     y_train = train_df['daysToFailure']
     cat_features = list(X_train.select_dtypes('object').columns)
-    X_train = X_train.drop(cat_features, axis=1)
-    # X_train[cat_features] = X_train[
-    #     cat_features
-    # ].astype(str).fillna('')
+    # X_train = X_train.drop(cat_features, axis=1)
+    X_train[cat_features] = X_train[
+        cat_features
+    ].astype(str).fillna('')
     # cat_features=cat_features
-    model = CatBoostRegressor()
+    model = CatBoostRegressor(cat_features=cat_features)
     model.fit(X_train, y_train)
     model.save_model(args.model_dir / 'model.cbm', format='cbm')
 
@@ -123,9 +123,9 @@ def predict(args):
     test_df, well_paths = make_processed_df(args.data_dir, 'test', args.num_workers, column_dtypes, tsfresh_features)
     cat_features = list(test_df.select_dtypes('object').columns)
     test_df = test_df.drop(cat_features, axis=1)
-    # test_df[cat_features] = test_df[
-    #     cat_features
-    # ].astype(str).fillna('')
+    test_df[cat_features] = test_df[
+        cat_features
+    ].astype(str).fillna('')
     model = CatBoostRegressor().load_model(args.model_dir / 'model.cbm')
     preds = model.predict(test_df)
     sub = pd.DataFrame({'filename': [well_path.name for well_path in well_paths], 'daysToFailure': preds})
