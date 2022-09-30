@@ -69,6 +69,10 @@ def process_single_df(split, column_dtypes, tsfresh_features, well_path):
 
     df, window_cols = build_window_features(df, tsfresh_features)
 
+    df[window_cols] = df[window_cols].fillna(method='ffill')
+    df[window_cols] = df[window_cols].fillna(method='bfill')
+    df[window_cols] = df[window_cols].fillna(value=-1)
+
     if split == 'train':
         X_list = []
         min_date = df['SK_Calendar'].min()
