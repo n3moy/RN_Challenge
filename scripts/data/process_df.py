@@ -147,7 +147,7 @@ def read_cfg(cfg_path):
 
 
 def make_processed_df(data_dir, split, num_workers, column_dtypes, tsfresh_features):
-    well_paths = sorted(data_dir.rglob('*.csv'))
+    well_paths = sorted(data_dir.rglob('*.csv'))[:10]
     partial_process_single_df = partial(process_single_df, split, column_dtypes, tsfresh_features)
 
     with warnings.catch_warnings():
@@ -228,6 +228,6 @@ if __name__ == "__main__":
     if DO_TEST:
         test_data_dir = Path(__file__).parent.parent.parent / "data" / "test"
         num_workers = 4
-        model_dir = "../../model/model_2.cbm"
+        model_dir = "../../model/model.cbm"
         ans = predict(test_data_dir, num_workers, model_dir)
 

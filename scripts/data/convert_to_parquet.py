@@ -168,6 +168,7 @@ def zip_to_parquet_v3(zip_path: str, output_path: str, folder_name: str):
 if __name__ == "__main__":
     ZIP_PATH = "../../data/archive/test.7z"
     OUT_PATH = "../../data/featured"
+    # Folder in archive that needed to extract files from
     FOLDER_NAME = "processed_train"
     asyncio.run(zip_to_parquet(ZIP_PATH, OUT_PATH, FOLDER_NAME))
     # zip_to_parquet_v2(ZIP_PATH, OUT_PATH, FOLDER_NAME)
