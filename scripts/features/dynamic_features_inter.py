@@ -98,7 +98,7 @@ def get_dynamic_features(
 def filter_data(
     data_folder_path: str,
     output_path: str,
-    dynamic_level: float,
+    dynamic_level: float
 ) -> None:
     dtypes_path = "../../configs/column_dtypes.json"
     test_cols_path = "../../configs/test_outer_nan_cols.json"
