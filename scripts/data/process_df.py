@@ -153,7 +153,7 @@ def process_single_df(split, column_dtypes, input_features, window_features, wel
 
 
 def read_cfg(cfg_path):
-    with open(cfg_path, 'r') as fin:
+    with open(cfg_path, 'r', encoding='utf-8') as fin:
         cfg = json.load(fin)
     return cfg
 
@@ -230,11 +230,12 @@ def predict(
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
     tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols.json')
     input_features = []
-    non_window_groups = ["РћР±РѕСЂСѓРґРѕРІР°РЅРёРµ", "РћС‚РєР°Р·С‹", "РЎРєРІР°Р¶РёРЅРЅРѕ-РїР»Р°СЃС‚РѕРІС‹Рµ СѓСЃР»РѕРІРёСЏ"]
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
     window_features = []
 
     for key in tsfresh_dict.keys():
         if key not in non_window_groups:
+            print(key)
             window_features.extend(tsfresh_dict[key])
         input_features.extend(tsfresh_dict[key])
 
