@@ -3,8 +3,8 @@ import json
 # import argparse
 
 import pandas as pd
-from pandas.api.types import is_datetime64_any_dtype as is_datetime
-import numpy as np
+# from pandas.api.types import is_datetime64_any_dtype as is_datetime
+# import numpy as np
 from typing import List
 
 from functools import partial
@@ -83,9 +83,9 @@ def process_single_df(split, column_dtypes, input_features, window_features, wel
     # tsfresh_features = df.select_dtypes(include=np.number).columns.tolist()
     tsfresh_features = window_features
 
-    df[tsfresh_features] = df[tsfresh_features].fillna(method='ffill')
-    df[tsfresh_features] = df[tsfresh_features].fillna(method='bfill')
-    df[tsfresh_features] = df[tsfresh_features].fillna(value=-1)
+    # df[tsfresh_features] = df[tsfresh_features].fillna(method='ffill')
+    # df[tsfresh_features] = df[tsfresh_features].fillna(method='bfill')
+    # df[tsfresh_features] = df[tsfresh_features].fillna(value=-1)
 
     # df, window_cols = build_window_features(df, window_features)
     window_cols = []
@@ -164,7 +164,7 @@ def read_cfg(cfg_path):
 
 
 def make_processed_df(data_dir, split, num_workers, column_dtypes, tsfresh_features, window_features):
-    well_paths = sorted(data_dir.rglob('*.csv'))[:2]
+    well_paths = sorted(data_dir.rglob('*.csv'))
     partial_process_single_df = partial(process_single_df, split, column_dtypes, tsfresh_features, window_features)
 
     with warnings.catch_warnings():
