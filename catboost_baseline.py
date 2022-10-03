@@ -174,7 +174,7 @@ def train(args):
     cfg_dir = Path(__file__).parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
     tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols.json')
-    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
+    non_window_groups = ["РћР±РѕСЂСѓРґРѕРІР°РЅРёРµ", "РћС‚РєР°Р·С‹", "РЎРєРІР°Р¶РёРЅРЅРѕ-РїР»Р°СЃС‚РѕРІС‹Рµ СѓСЃР»РѕРІРёСЏ"]
     input_features = []
     window_features = []
 
@@ -204,7 +204,7 @@ def predict(args):
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
     tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols.json')
     input_features = []
-    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
+    non_window_groups = ["РћР±РѕСЂСѓРґРѕРІР°РЅРёРµ", "РћС‚РєР°Р·С‹", "РЎРєРІР°Р¶РёРЅРЅРѕ-РїР»Р°СЃС‚РѕРІС‹Рµ СѓСЃР»РѕРІРёСЏ"]
     window_features = []
 
     for key in tsfresh_dict.keys():
