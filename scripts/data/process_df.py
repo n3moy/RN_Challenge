@@ -59,6 +59,10 @@ def process_single_df(split, column_dtypes, input_features, window_features, wel
     # df = pd.read_parquet(well_path)
     df = df_in[input_features + ['SK_Well', 'SK_Calendar', 'lastStartDate']]
 
+    df[input_features] = df[input_features].fillna(method='ffill')
+    df[input_features] = df[input_features].fillna(method='bfill')
+    df[input_features] = df[input_features].fillna(value=-1)
+
     if split == "train":
         df[['FailureDate', 'daysToFailure', 'CurrentTTF']] = df_in[['FailureDate', 'daysToFailure', 'CurrentTTF']]
 
@@ -180,7 +184,8 @@ def make_processed_df(data_dir, split, num_workers, column_dtypes, tsfresh_featu
 
 def train(
     data_dir: Path,
-    num_workers: int
+    num_workers: int,
+    model_dir: Path
 ):
     cfg_dir = Path(__file__).parent.parent.parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
@@ -215,9 +220,9 @@ def train(
     model = RandomForestRegressor(verbose=100, n_jobs=-1)
     model.fit(X_train, y_train)
     pred = model.predict(X_test)
-    rmsle = sklearn.metrics.mean_squared_log_error(y_test, pred, squared=False)
-    print(rmsle)
-    joblib.dump(model, "../../model/model_rf.joblib")
+    # rmsle = sklearn.metrics.mean_squared_log_error(y_test, pred, squared=False)
+    # print(rmsle)
+    joblib.dump(model, model_dir / "model_rf.joblib")
     # model.save_model("../../model/model_lasso.cbm", format='cbm')
 
 
@@ -244,7 +249,7 @@ def predict(
 
     cat_features = list(test_df.select_dtypes('object').columns)
     test_df = test_df.drop(cat_features, axis=1)
-    print(cat_features)
+    # print(cat_features)
     # test_df[cat_features] = test_df[
     #     cat_features
     # ].astype(str).fillna('')
@@ -272,10 +277,11 @@ if __name__ == "__main__":
     if DO_TRAIN:
         train_data_dir = Path(__file__).parent.parent.parent / "data" / "processed"
         num_workers = 4
-        train(train_data_dir, num_workers)
+        model_dir = Path(__file__).parent.parent.parent / "model"
+        train(train_data_dir, num_workers, model_dir)
     if DO_TEST:
         test_data_dir = Path(__file__).parent.parent.parent / "data" / "test"
         num_workers = 4
-        model_dir = "../../model/model_rf.joblib"
+        model_dir = Path(__file__).parent.parent.parent / "model" / "model_rf.joblib"
         ans = predict(test_data_dir, num_workers, model_dir)
 
