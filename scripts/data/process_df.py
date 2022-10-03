@@ -82,11 +82,6 @@ def process_single_df(split, column_dtypes, input_features, window_features, wel
 
     # tsfresh_features = df.select_dtypes(include=np.number).columns.tolist()
     tsfresh_features = window_features
-
-    # df[tsfresh_features] = df[tsfresh_features].fillna(method='ffill')
-    # df[tsfresh_features] = df[tsfresh_features].fillna(method='bfill')
-    # df[tsfresh_features] = df[tsfresh_features].fillna(value=-1)
-
     # df, window_cols = build_window_features(df, window_features)
     window_cols = []
     # df[window_cols] = df[window_cols].fillna(method='ffill')
@@ -282,6 +277,6 @@ if __name__ == "__main__":
     if DO_TEST:
         test_data_dir = Path(__file__).parent.parent.parent / "data" / "test"
         num_workers = 4
-        model_dir = Path(__file__).parent.parent.parent / "model" / "model_rf.joblib"
+        model_dir = Path(__file__).parent.parent.parent / "model" / "model.joblib"
         ans = predict(test_data_dir, num_workers, model_dir)
 
