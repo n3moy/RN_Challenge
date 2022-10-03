@@ -10,8 +10,10 @@ import psutil
 from functools import partial
 from multiprocessing import Pool
 from pathlib import Path
+import joblib
 
-from catboost import CatBoostRegressor
+# from catboost import CatBoostRegressor
+from sklearn.ensemble import RandomForestRegressor
 from tsfresh import extract_features
 from tsfresh.feature_extraction import MinimalFCParameters
 from tqdm import tqdm
@@ -47,8 +49,17 @@ def build_window_features(
     return out_data, out_cols
 
 
-def process_single_df(split, column_dtypes, tsfresh_features, well_path):
-    df = pd.read_csv(well_path, low_memory=False, dtype=column_dtypes)
+def process_single_df(split, column_dtypes, input_features, window_features, well_path):
+    df_in = pd.read_csv(well_path, low_memory=False, dtype=column_dtypes)
+    # df = pd.read_parquet(well_path)
+    df = df_in[input_features + ['SK_Well', 'SK_Calendar', 'lastStartDate']]
+
+    df[input_features] = df[input_features].fillna(method='ffill')
+    df[input_features] = df[input_features].fillna(method='bfill')
+    df[input_features] = df[input_features].fillna(value=-1)
+
+    if split == "train":
+        df[['FailureDate', 'daysToFailure', 'CurrentTTF']] = df_in[['FailureDate', 'daysToFailure', 'CurrentTTF']]
 
     df['SK_Calendar'] = pd.to_datetime(df['SK_Calendar'], format='%Y-%m-%d')
     df['lastStartDate'] = pd.to_datetime(df['lastStartDate'], format='%Y-%m-%d')
@@ -60,19 +71,19 @@ def process_single_df(split, column_dtypes, tsfresh_features, well_path):
         on='SK_Well', how='left'
     )
 
-    df['SKLayers'] = df['SKLayers'].fillna(value='').str.split(';').map(len)
+    # df["SKLayers"] = df["SKLayers"].astype(str)
+    # df['SKLayers'] = df['SKLayers'].fillna(value='').str.split(';').map(len)
     df['CalendarDays'] = (df['SK_Calendar'] - df['CalendarStart']).dt.days
 
-    df[tsfresh_features] = df[tsfresh_features].fillna(method='ffill')
-    df[tsfresh_features] = df[tsfresh_features].fillna(method='bfill')
-    df[tsfresh_features] = df[tsfresh_features].fillna(value=-1)
-
-    df, window_cols = build_window_features(df, tsfresh_features)
-
-    df[window_cols] = df[window_cols].fillna(method='ffill')
-    df[window_cols] = df[window_cols].fillna(method='bfill')
-    df[window_cols] = df[window_cols].fillna(value=-1)
-
+    # tsfresh_features = df.select_dtypes(include=np.number).columns.tolist()
+    tsfresh_features = window_features
+    # df, window_cols = build_window_features(df, window_features)
+    window_cols = []
+    # df[window_cols] = df[window_cols].fillna(method='ffill')
+    # df[window_cols] = df[window_cols].fillna(method='bfill')
+    # df[window_cols] = df[window_cols].fillna(value=-1)
+    # print(len(['SK_Well', 'CalendarDays'] + tsfresh_features + window_cols))
+    # print(len(set(['SK_Well', 'CalendarDays'] + tsfresh_features + window_cols)))
     if split == 'train':
         X_list = []
         min_date = df['SK_Calendar'].min()
@@ -136,9 +147,9 @@ def process_single_df(split, column_dtypes, tsfresh_features, well_path):
         return X
 
 
-def make_processed_df(data_dir, split, num_workers, column_dtypes, tsfresh_features):
+def make_processed_df(data_dir, split, num_workers, column_dtypes, tsfresh_features, window_features):
     well_paths = sorted(data_dir.rglob('*.csv'))
-    partial_process_single_df = partial(process_single_df, split, column_dtypes, tsfresh_features)
+    partial_process_single_df = partial(process_single_df, split, column_dtypes, tsfresh_features, window_features)
 
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', category=pd.errors.PerformanceWarning)
@@ -162,35 +173,55 @@ def read_cfg(cfg_path):
 def train(args):
     cfg_dir = Path(__file__).parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_features = read_cfg(cfg_dir / 'tsfresh_features.json')
+    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols.json')
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
+    input_features = []
+    window_features = []
 
-    train_df, _ = make_processed_df(args.data_dir, 'train', args.num_workers, column_dtypes, tsfresh_features)
-    X_train = train_df.drop(columns=['CurrentTTF', 'FailureDate', 'daysToFailure'])
+    for key in tsfresh_dict.keys():
+        if key not in non_window_groups:
+            window_features.extend(tsfresh_dict[key])
+        input_features.extend(tsfresh_dict[key])
+
+    train_df, _ = make_processed_df(args.data_dir, 'train', args.num_workers, column_dtypes, input_features, window_features)
+    X_train = train_df.drop(columns=['FailureDate', 'daysToFailure', 'CurrentTTF', 'SK_Calendar', 'lastStartDate', 'CalendarStart'])
     y_train = train_df['daysToFailure']
     cat_features = list(X_train.select_dtypes('object').columns)
-    X_train[cat_features] = X_train[
-        cat_features
-    ].astype(str).fillna('')
-    model = CatBoostRegressor(
-        cat_features=cat_features
-    )
+    # X_train[cat_features] = X_train[
+    #     cat_features
+    # ].astype(str).fillna('')
+    X_train = X_train.drop(cat_features, axis=1)
+    # model = CatBoostRegressor(
+    #     cat_features=cat_features
+    # )
+    model = RandomForestRegressor(verbose=100, n_jobs=-1)
     model.fit(X_train, y_train)
-    model.save_model(args.model_dir / 'model.cbm', format='cbm')
+    joblib.dump(args.model_dir / 'model.joblib')
 
 
 def predict(args):
     cfg_dir = Path(__file__).parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_features = read_cfg(cfg_dir / 'tsfresh_features.json')
+    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols.json')
+    input_features = []
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
+    window_features = []
 
-    test_df, well_paths = make_processed_df(args.data_dir, 'test', args.num_workers, column_dtypes, tsfresh_features)
+    for key in tsfresh_dict.keys():
+        if key not in non_window_groups:
+            window_features.extend(tsfresh_dict[key])
+        input_features.extend(tsfresh_dict[key])
+
+    test_df, well_paths = make_processed_df(args.data_dir, 'test', args.num_workers, column_dtypes, input_features, window_features)
+    test_df = test_df.drop(columns=['SK_Calendar', 'lastStartDate', 'CalendarStart'])
     cat_features = list(test_df.select_dtypes('object').columns)
-    test_df[cat_features] = test_df[
-        cat_features
-    ].astype(str).fillna('')
-    model = CatBoostRegressor().load_model(args.model_dir / 'model.cbm')
+    test_df = test_df.drop(cat_features, axis=1)
+    # test_df[cat_features] = test_df[
+    #     cat_features
+    # ].astype(str).fillna('')
+    # model = CatBoostRegressor().load_model(args.model_dir / 'model.cbm')
+    model = joblib.load(args.model_dir / 'model.joblib')
     preds = model.predict(test_df)
-    preds = np.abs(preds)
     sub = pd.DataFrame({'filename': [well_path.name for well_path in well_paths], 'daysToFailure': preds})
     sub.to_csv(args.output_dir / 'submission.csv', index=False)
 
