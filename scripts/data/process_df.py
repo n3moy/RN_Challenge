@@ -3,6 +3,7 @@ import json
 # import argparse
 
 import pandas as pd
+from pandas.api.types import is_datetime64_any_dtype as is_datetime
 import numpy as np
 from typing import List
 
@@ -11,11 +12,15 @@ from multiprocessing import Pool
 import warnings
 from pathlib import Path
 from tqdm import tqdm
+import joblib
 
-from catboost import CatBoostRegressor
+# from catboost import CatBoostRegressor
+from sklearn.ensemble import RandomForestRegressor
 
 from tsfresh import extract_features
 from tsfresh.feature_extraction import MinimalFCParameters
+from sklearn.model_selection import train_test_split
+import sklearn.metrics
 
 from scripts.features.dynamic_features import build_features, filter_data
 from scripts.features.dynamic_features import build_window_features
@@ -49,12 +54,14 @@ def process_one_well(
     return df
 
 
-def process_single_df(split, column_dtypes, input_features, well_path):
+def process_single_df(split, column_dtypes, input_features, window_features, well_path):
     df_in = pd.read_csv(well_path, low_memory=False, dtype=column_dtypes)
     # df = pd.read_parquet(well_path)
-    df = df_in[input_features]
+    df = df_in[input_features + ['SK_Well', 'SK_Calendar', 'lastStartDate']]
+
     if split == "train":
-        df[['FailureDate', 'daysToFailure']] = df_in[['FailureDate', 'daysToFailure']]
+        df[['FailureDate', 'daysToFailure', 'CurrentTTF']] = df_in[['FailureDate', 'daysToFailure', 'CurrentTTF']]
+
     df['SK_Calendar'] = pd.to_datetime(df['SK_Calendar'], format='%Y-%m-%d')
     df['lastStartDate'] = pd.to_datetime(df['lastStartDate'], format='%Y-%m-%d')
 
@@ -66,20 +73,21 @@ def process_single_df(split, column_dtypes, input_features, well_path):
     )
 
     # df["SKLayers"] = df["SKLayers"].astype(str)
-    df['SKLayers'] = df['SKLayers'].fillna(value='').str.split(';').map(len)
+    # df['SKLayers'] = df['SKLayers'].fillna(value='').str.split(';').map(len)
     df['CalendarDays'] = (df['SK_Calendar'] - df['CalendarStart']).dt.days
 
-    tsfresh_features = df.select_dtypes(include=np.number).columns.tolist()
+    # tsfresh_features = df.select_dtypes(include=np.number).columns.tolist()
+    tsfresh_features = window_features
 
     df[tsfresh_features] = df[tsfresh_features].fillna(method='ffill')
     df[tsfresh_features] = df[tsfresh_features].fillna(method='bfill')
     df[tsfresh_features] = df[tsfresh_features].fillna(value=-1)
 
-    df, window_cols = build_window_features(df, tsfresh_features)
-
-    df[window_cols] = df[window_cols].fillna(method='ffill')
-    df[window_cols] = df[window_cols].fillna(method='bfill')
-    df[window_cols] = df[window_cols].fillna(value=-1)
+    # df, window_cols = build_window_features(df, window_features)
+    window_cols = []
+    # df[window_cols] = df[window_cols].fillna(method='ffill')
+    # df[window_cols] = df[window_cols].fillna(method='bfill')
+    # df[window_cols] = df[window_cols].fillna(value=-1)
     # print(len(['SK_Well', 'CalendarDays'] + tsfresh_features + window_cols))
     # print(len(set(['SK_Well', 'CalendarDays'] + tsfresh_features + window_cols)))
     if split == 'train':
@@ -104,7 +112,7 @@ def process_single_df(split, column_dtypes, input_features, well_path):
                 break
 
             df_extracted_features = extract_features(
-                df_filtered[['SK_Well'] + tsfresh_features + window_cols],
+                df_filtered[['SK_Well', 'CalendarDays'] + tsfresh_features + window_cols],
                 default_fc_parameters=MinimalFCParameters(),
                 column_id='SK_Well',
                 column_sort='CalendarDays',
@@ -131,7 +139,7 @@ def process_single_df(split, column_dtypes, input_features, well_path):
         X = X.merge(df_filtered, on=['SK_Well', 'CalendarDays'])
 
         df_extracted_features = extract_features(
-            df_filtered[['SK_Well'] + tsfresh_features + window_cols],
+            df_filtered[['SK_Well', 'CalendarDays'] + tsfresh_features + window_cols],
             default_fc_parameters=MinimalFCParameters(),
             column_id='SK_Well',
             column_sort='CalendarDays',
@@ -151,9 +159,9 @@ def read_cfg(cfg_path):
     return cfg
 
 
-def make_processed_df(data_dir, split, num_workers, column_dtypes, tsfresh_features):
+def make_processed_df(data_dir, split, num_workers, column_dtypes, tsfresh_features, window_features):
     well_paths = sorted(data_dir.rglob('*.csv'))[:2]
-    partial_process_single_df = partial(process_single_df, split, column_dtypes, tsfresh_features)
+    partial_process_single_df = partial(process_single_df, split, column_dtypes, tsfresh_features, window_features)
 
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', category=pd.errors.PerformanceWarning)
@@ -176,26 +184,41 @@ def train(
 ):
     cfg_dir = Path(__file__).parent.parent.parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_dict = read_cfg(cfg_dir / 'test_non_nan_cols.json')
+    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols.json')
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
     input_features = []
+    window_features = []
 
     for key in tsfresh_dict.keys():
-        if key != "Оборудование":
-            input_features.extend(tsfresh_dict[key])
-
-    input_features = list(set(input_features))
-    train_df, _ = make_processed_df(data_dir, 'train', num_workers, column_dtypes, input_features)
-    X_train = train_df.drop(columns=['FailureDate', 'daysToFailure'])
-    y_train = train_df['daysToFailure']
+        if key not in non_window_groups:
+            window_features.extend(tsfresh_dict[key])
+        input_features.extend(tsfresh_dict[key])
+    # del input_features[["daysToFailure", "CurrentTTF"]]
+    # input_features = list(set(input_features))
+    train_df, _ = make_processed_df(data_dir, 'train', num_workers, column_dtypes, input_features, window_features)
+    X = train_df.drop(columns=['FailureDate', 'daysToFailure', 'CurrentTTF', 'SK_Calendar', 'lastStartDate', 'CalendarStart'])
+    y = train_df['daysToFailure']
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     cat_features = list(X_train.select_dtypes('object').columns)
-    # X_train = X_train.drop(cat_features, axis=1)
-    X_train[cat_features] = X_train[
-        cat_features
-    ].astype(str).fillna('')
+    # print(cat_features)
+    # X_train = pd.get_dummies(X_train, columns=cat_features)
+    X_train = X_train.drop(cat_features, axis=1)
+    X_test = X_test.drop(cat_features, axis=1)
+    # X_train[cat_features] = X_train[
+    #     cat_features
+    # ].astype(str).fillna('')
     # cat_features=cat_features
-    model = CatBoostRegressor(cat_features=cat_features, verbose=100)
+    # model = CatBoostRegressor(verbose=100)
+    # for col in X_train.columns:
+    #     if not (X_train[col].dtype == np.float):
+    #         print(col, X_train[col].dtype)
+    model = RandomForestRegressor(verbose=100, n_jobs=-1)
     model.fit(X_train, y_train)
-    model.save_model("../../model/model_4.cbm", format='cbm')
+    pred = model.predict(X_test)
+    rmsle = sklearn.metrics.mean_squared_log_error(y_test, pred, squared=False)
+    print(rmsle)
+    joblib.dump(model, "../../model/model_rf.joblib")
+    # model.save_model("../../model/model_lasso.cbm", format='cbm')
 
 
 def predict(
@@ -205,23 +228,29 @@ def predict(
 ):
     cfg_dir = Path(__file__).parent.parent.parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_dict = read_cfg(cfg_dir / 'test_non_nan_cols.json')
+    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols.json')
     input_features = []
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
+    window_features = []
 
     for key in tsfresh_dict.keys():
-        if key != "Оборудование":
-            input_features.extend(tsfresh_dict[key])
+        if key not in non_window_groups:
+            window_features.extend(tsfresh_dict[key])
+        input_features.extend(tsfresh_dict[key])
 
-    input_features = list(set(input_features))
-    test_df, well_paths = make_processed_df(data_dir, 'test', num_workers, column_dtypes, input_features)
+    # input_features = list(set(input_features))
+    test_df, well_paths = make_processed_df(data_dir, 'test', num_workers, column_dtypes, input_features, window_features)
+    test_df = test_df.drop(columns=['SK_Calendar', 'lastStartDate', 'CalendarStart'])
 
     cat_features = list(test_df.select_dtypes('object').columns)
-    # test_df = test_df.drop(cat_features, axis=1)
-    test_df[cat_features] = test_df[
-        cat_features
-    ].astype(str).fillna('')
-    test_df = test_df.dropna()
-    model = CatBoostRegressor().load_model(model_dir)
+    test_df = test_df.drop(cat_features, axis=1)
+    print(cat_features)
+    # test_df[cat_features] = test_df[
+    #     cat_features
+    # ].astype(str).fillna('')
+    # test_df = test_df.dropna()
+    # model = CatBoostRegressor().load_model(model_dir)
+    model = joblib.load(model_dir)
     preds = model.predict(test_df)
     sub = pd.DataFrame({'filename': [well_path.name for well_path in well_paths], 'daysToFailure': preds})
     sub.to_csv("../../data/sub.csv", index=False)
@@ -247,6 +276,6 @@ if __name__ == "__main__":
     if DO_TEST:
         test_data_dir = Path(__file__).parent.parent.parent / "data" / "test"
         num_workers = 4
-        model_dir = "../../model/model_4.cbm"
+        model_dir = "../../model/model_rf.joblib"
         ans = predict(test_data_dir, num_workers, model_dir)
 
