@@ -47,7 +47,7 @@ def build_window_features(
     return out_data, out_cols
 
 
-def process_single_df(split, column_dtypes, tsfresh_features, well_path):
+def process_single_df(split, column_dtypes, tsfresh_features, well_path, use_relevant_features = False):
     df = pd.read_csv(well_path, low_memory=False, dtype=column_dtypes)
 
     df['SK_Calendar'] = pd.to_datetime(df['SK_Calendar'], format='%Y-%m-%d')
@@ -73,6 +73,11 @@ def process_single_df(split, column_dtypes, tsfresh_features, well_path):
     df[window_cols] = df[window_cols].fillna(method='bfill')
     df[window_cols] = df[window_cols].fillna(value=-1)
 
+    fc_params = MinimalFCParameters()
+    if use_relevant_features:
+        del fc_params['length']
+        del fc_params['sum_values']
+
     if split == 'train':
         X_list = []
         min_date = df['SK_Calendar'].min()
@@ -93,10 +98,10 @@ def process_single_df(split, column_dtypes, tsfresh_features, well_path):
                 continue
             elif X['SK_Calendar'].iloc[0] != date:
                 break
-
+            
             df_extracted_features = extract_features(
                 df_filtered[['SK_Well', 'CalendarDays'] + tsfresh_features + window_cols],
-                default_fc_parameters=MinimalFCParameters(),
+                default_fc_parameters=fc_params,
                 column_id='SK_Well',
                 column_sort='CalendarDays',
                 disable_progressbar=True,
@@ -123,7 +128,7 @@ def process_single_df(split, column_dtypes, tsfresh_features, well_path):
 
         df_extracted_features = extract_features(
             df_filtered[['SK_Well', 'CalendarDays'] + tsfresh_features + window_cols],
-            default_fc_parameters=MinimalFCParameters(),
+            default_fc_parameters=fc_params,
             column_id='SK_Well',
             column_sort='CalendarDays',
             disable_progressbar=True,
