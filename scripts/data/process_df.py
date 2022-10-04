@@ -184,8 +184,8 @@ def train(
 ):
     cfg_dir = Path(__file__).parent.parent.parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols.json')
-    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
+    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols_v2.json')
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия", "Расчетные параметры"]
     input_features = []
     window_features = []
 
@@ -217,20 +217,20 @@ def train(
     pred = model.predict(X_test)
     # rmsle = sklearn.metrics.mean_squared_log_error(y_test, pred, squared=False)
     # print(rmsle)
-    joblib.dump(model, model_dir / "model_rf.joblib")
+    joblib.dump(model, model_dir / "model_rf_lasso_v2.joblib")
     # model.save_model("../../model/model_lasso.cbm", format='cbm')
 
 
 def predict(
     data_dir: Path,
     num_workers: int,
-    model_dir: str
+    model_dir: Path
 ):
     cfg_dir = Path(__file__).parent.parent.parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols.json')
+    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols_v2.json')
     input_features = []
-    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия", "Расчетные параметры"]
     window_features = []
 
     for key in tsfresh_dict.keys():
@@ -278,6 +278,6 @@ if __name__ == "__main__":
     if DO_TEST:
         test_data_dir = Path(__file__).parent.parent.parent / "data" / "test"
         num_workers = 4
-        model_dir = Path(__file__).parent.parent.parent / "model" / "model.joblib"
+        model_dir = Path(__file__).parent.parent.parent / "model" / "model_rf_lasso_v2.joblib"
         ans = predict(test_data_dir, num_workers, model_dir)
 

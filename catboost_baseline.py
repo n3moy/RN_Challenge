@@ -173,8 +173,8 @@ def read_cfg(cfg_path):
 def train(args):
     cfg_dir = Path(__file__).parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols.json')
-    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
+    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols_v2.json')
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия", "Расчетные параметры"]
     input_features = []
     window_features = []
 
@@ -202,9 +202,9 @@ def train(args):
 def predict(args):
     cfg_dir = Path(__file__).parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols.json')
+    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols_v2.json')
     input_features = []
-    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия", "Расчетные параметры"]
     window_features = []
 
     for key in tsfresh_dict.keys():
