@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import glob
 import json
-# from typing import List
+from typing import List
 from tsfresh import extract_features
 from tsfresh.feature_extraction import MinimalFCParameters
 # from sklearn.linear_model import Lasso
@@ -198,6 +198,72 @@ def get_catboost_features(cfg_dir, well_path):
     return X.columns
 
 
+def calc_cat_features_stat(
+    input_data: pd.DataFrame,
+    save_folder: Path = None,
+    top_n: int = None
+):
+    val_counts = pd.DataFrame()
+    if top_n is not None:
+        cat_features_names = pd.DataFrame(index=range(top_n))
+    for col in input_data.columns:
+        col_uniq_val = input_data[col].value_counts()
+        col_uniq_val_df = pd.DataFrame(data = {
+            'Column name': col,
+            'Value': col_uniq_val.index,
+            'Counts': col_uniq_val.values}
+        )
+        val_counts = pd.concat([val_counts, col_uniq_val_df], axis = 0)
+        if top_n is not None:
+            feature_vals = col_uniq_val.index.values
+            slice_len = min(top_n, len(feature_vals))
+            feature_vals = list(feature_vals[:slice_len]) + [None]*(top_n  - len(feature_vals))
+            cat_features_names[col] = feature_vals
+    if save_folder is None:
+        return val_counts
+    else:
+        save_name = "categorical_features_stat.csv"
+        save_path = save_folder / save_name
+        val_counts.to_csv(save_path, index=False)
+        if top_n is not None:
+            save_name = "categorical_features_unique_vals.csv"
+            save_path = save_folder / save_name
+            cat_features_names.to_csv(save_path, index=False)
+
+
+def cat_features_analysis(
+    data_dir: Path,
+    use_parquet: bool = False
+):
+    if use_parquet:
+        fnames = data_dir.rglob('*.parquet')
+    else:
+        fnames = data_dir.rglob('*.csv')
+    cfg_dir = Path(__file__).parent.parent.parent / "configs"
+    column_dtypes = read_cfg(cfg_dir / "column_dtypes.json")
+    joined_data = pd.DataFrame()
+
+    for fpath in fnames:
+        if use_parquet:
+            data_file = pd.read_parquet(fpath)
+        else:
+            data_file = pd.read_csv(fpath, low_memory=False, dtype=column_dtypes)
+
+        data_file = data_file.drop(columns= ['CurrentTTF', 
+                                              'FailureDate', 
+                                              'daysToFailure',  
+                                              'SKLayers',
+                                              'SK_Well',
+                                              'lastStartDate',
+                                              'SK_Calendar'])
+        data_file = data_file.select_dtypes(include='object')
+
+        joined_data = pd.concat([joined_data, data_file], axis=0)
+
+    report_path = Path(__file__).parent.parent.parent / "reports"
+    calc_cat_features_stat(joined_data, save_folder=report_path, top_n = 30)
+
+
 # --- MAIN ---
 
 
@@ -205,6 +271,7 @@ if __name__ == "__main__":
     DO_CORR = False
     DO_LASSO = True
     DO_CATBOOST = False
+    DO_CAT_ANALYSIS = True
 
     if DO_CORR:
         files = get_parquet_files(Data_folder)
@@ -228,3 +295,7 @@ if __name__ == "__main__":
         WELL_PATH = Path(__file__).parent.parent.parent / "data" / "processed" / "000bb919.parquet"
         SAVE_DIR = Path(__file__).parent.parent.parent / "reports"
         get_catboost_model_feature_imp(MODEL_DIR, CFG_DIR, WELL_PATH, SAVE_DIR)
+
+    if DO_CAT_ANALYSIS:
+        DATA_DIR = Path(__file__).parent.parent.parent / "data" / "processed"
+        cat_features_analysis(DATA_DIR, use_parquet=True)
