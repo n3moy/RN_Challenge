@@ -36,6 +36,7 @@ def calc_corelation(dfs):
         all_df_stat.append(full_stat)
     return all_df_stat
 
+
 def get_parquet_files(folder):
     files = glob.glob(folder+'/*.parquet')
     return files
@@ -102,9 +103,24 @@ def start_lasso_analysis(
     report_path = Path(__file__).parent.parent.parent / "reports"
     get_top_features(joined_data, save_folder=report_path)
 
-def get_catboost_model_feature_imp(model_dir: Path, 
-                                   cfg_dir: Path, 
-                                   well_path: Path, 
+
+def start_lasso_analysis_processed(
+    data_dir: Path
+):
+    from scripts.data.process_df import make_processed_df
+
+    # fnames = data_dir.rglob('*.csv')
+    cfg_dir = Path(__file__).parent.parent.parent / "configs"
+    column_dtypes = read_cfg(cfg_dir / "column_dtypes.json")
+    tsfresh_features = read_cfg(cfg_dir / "tsfresh_features.json")
+    train_df, _ = make_processed_df(data_dir, 'train', 4, column_dtypes, tsfresh_features)
+    report_path = Path(__file__).parent.parent.parent / "reports"
+    get_top_features(train_df, save_folder=report_path)
+
+
+def get_catboost_model_feature_imp(model_dir: Path,
+                                   cfg_dir: Path,
+                                   well_path: Path,
                                    save_dir: Path):
     from catboost import CatBoostRegressor
 
@@ -120,8 +136,9 @@ def get_catboost_model_feature_imp(model_dir: Path,
     print(out_df)
     out_df.to_excel(save_path, index=True)
 
+
 def get_catboost_features(cfg_dir, well_path):
-        #df = pd.read_csv(well_path, low_memory=False, dtype=column_dtypes)
+    # df = pd.read_csv(well_path, low_memory=False, dtype=column_dtypes)
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
     tsfresh_features = read_cfg(cfg_dir / 'tsfresh_features.json')
     df = pd.read_parquet(well_path)
@@ -168,6 +185,8 @@ def get_catboost_features(cfg_dir, well_path):
     X = X.merge(df_extracted_features, on='SK_Well')
     X = X.drop(columns = ['CurrentTTF', 'FailureDate', 'daysToFailure'])
     return X.columns
+
+
 # --- MAIN ---
 
 
@@ -186,11 +205,15 @@ if __name__ == "__main__":
 
     if DO_LASSO:
         DATA_DIR = Path(__file__).parent.parent.parent / "data" / "processed"
-        start_lasso_analysis(DATA_DIR)
+        DO_PROCESSING = True
+        if DO_PROCESSING:
+            start_lasso_analysis_processed(DATA_DIR)
+        else:
+            start_lasso_analysis(DATA_DIR)
 
     if DO_CATBOOST:
         MODEL_DIR = Path(__file__).parent / "old_models"
-        CFG_DIR =  Path(__file__).parent.parent.parent / "configs"
+        CFG_DIR = Path(__file__).parent.parent.parent / "configs"
         WELL_PATH = Path(__file__).parent.parent.parent / "data" / "processed" / "000bb919.parquet"
         SAVE_DIR = Path(__file__).parent.parent.parent / "reports"
         get_catboost_model_feature_imp(MODEL_DIR, CFG_DIR, WELL_PATH, SAVE_DIR)
