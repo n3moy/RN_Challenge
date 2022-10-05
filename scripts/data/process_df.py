@@ -71,11 +71,12 @@ def process_single_df(split, column_dtypes, tsfresh_features, well_path):
     df[tsfresh_features] = df[tsfresh_features].fillna(method='bfill')
     df[tsfresh_features] = df[tsfresh_features].fillna(value=-1)
 
-    df, window_cols = build_window_features(df, tsfresh_features)
-
-    df[window_cols] = df[window_cols].fillna(method='ffill')
-    df[window_cols] = df[window_cols].fillna(method='bfill')
-    df[window_cols] = df[window_cols].fillna(value=-1)
+    # df, window_cols = build_window_features(df, tsfresh_features)
+    #
+    window_cols = []
+    # df[window_cols] = df[window_cols].fillna(method='ffill')
+    # df[window_cols] = df[window_cols].fillna(method='bfill')
+    # df[window_cols] = df[window_cols].fillna(value=-1)
 
     if split == 'train':
         X_list = []
@@ -147,7 +148,7 @@ def read_cfg(cfg_path):
 
 
 def make_processed_df(data_dir, split, num_workers, column_dtypes, tsfresh_features):
-    well_paths = sorted(data_dir.rglob('*.csv'))[:10]
+    well_paths = sorted(data_dir.rglob('*.csv'))
     partial_process_single_df = partial(process_single_df, split, column_dtypes, tsfresh_features)
 
     with warnings.catch_warnings():

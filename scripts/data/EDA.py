@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import glob
 import json
-from typing import List
+# from typing import List
 from tsfresh import extract_features
 from tsfresh.feature_extraction import MinimalFCParameters
 # from sklearn.linear_model import Lasso
@@ -54,7 +54,7 @@ def read_cfg(cfg_path):
 def get_top_features(
     input_data: pd.DataFrame,
     top_n: int = None,
-    save_folder: Path = None
+    save_path: Path = None
 ):
     from sklearn.linear_model import Lasso
     from sklearn.preprocessing import StandardScaler
@@ -74,9 +74,8 @@ def get_top_features(
     if isinstance(top_n, int):
         out_df = out_df.head(top_n)
 
-    if isinstance(save_folder, Path):
-        save_name = "lasso_coeffs.xlsx"
-        save_path = save_folder / save_name
+    if isinstance(save_path, Path):
+        print(f"Report saved to: {save_path}")
         out_df.to_excel(save_path, index=True)
     else:
         return out_df
@@ -100,8 +99,9 @@ def start_lasso_analysis(
 
         joined_data = pd.concat([joined_data, data_file], axis=0)
 
-    report_path = Path(__file__).parent.parent.parent / "reports"
-    get_top_features(joined_data, save_folder=report_path)
+    report_folder = Path(__file__).parent.parent.parent / "reports"
+    report_path = report_folder / "lasso_coeffs.xlsx"
+    get_top_features(joined_data, save_path=report_path)
 
 
 def start_lasso_analysis_processed(
@@ -113,9 +113,20 @@ def start_lasso_analysis_processed(
     cfg_dir = Path(__file__).parent.parent.parent / "configs"
     column_dtypes = read_cfg(cfg_dir / "column_dtypes.json")
     tsfresh_features = read_cfg(cfg_dir / "tsfresh_features.json")
+
     train_df, _ = make_processed_df(data_dir, 'train', 4, column_dtypes, tsfresh_features)
-    report_path = Path(__file__).parent.parent.parent / "reports"
-    get_top_features(train_df, save_folder=report_path)
+    cttf = train_df["CurrentTTF"].astype(int)
+    target = train_df["daysToFailure"].astype(int)
+    # train_df[['CurrentTTF', 'daysToFailure']] = train_df[['CurrentTTF', 'daysToFailure']].astype(int)
+    train_df = train_df.select_dtypes(include=np.number)
+    train_df = train_df[tsfresh_features].fillna(method='ffill')
+    train_df = train_df[tsfresh_features].fillna(method='bfill')
+    train_df = train_df[tsfresh_features].fillna(value=-1)
+    train_df["CurrentTTF"] = cttf
+    train_df["daysToFailure"] = target
+    report_folder = Path(__file__).parent.parent.parent / "reports"
+    report_path = report_folder / "lasso_coeffs_tsfresh.xlsx"
+    get_top_features(train_df, save_path=report_path)
 
 
 def get_catboost_model_feature_imp(model_dir: Path,
@@ -192,8 +203,8 @@ def get_catboost_features(cfg_dir, well_path):
 
 if __name__ == "__main__":
     DO_CORR = False
-    DO_LASSO = False
-    DO_CATBOOST = True
+    DO_LASSO = True
+    DO_CATBOOST = False
 
     if DO_CORR:
         files = get_parquet_files(Data_folder)
