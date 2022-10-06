@@ -59,6 +59,10 @@ def process_single_df(split, column_dtypes, input_features, window_features, wel
     # df = pd.read_parquet(well_path)
     df = df_in[input_features + ['SK_Well', 'SK_Calendar', 'lastStartDate']]
 
+    df[input_features] = df[input_features].fillna(method='ffill')
+    df[input_features] = df[input_features].fillna(method='bfill')
+    df[input_features] = df[input_features].fillna(value=-1)
+
     if split == "train":
         df[['FailureDate', 'daysToFailure', 'CurrentTTF']] = df_in[['FailureDate', 'daysToFailure', 'CurrentTTF']]
 
@@ -148,7 +152,7 @@ def process_single_df(split, column_dtypes, input_features, window_features, wel
 
 
 def read_cfg(cfg_path):
-    with open(cfg_path, 'r', encoding='utf-8') as fin:
+    with open(cfg_path, 'r', encoding='windows-1251') as fin:
         cfg = json.load(fin)
     return cfg
 
@@ -179,8 +183,8 @@ def train(
 ):
     cfg_dir = Path(__file__).parent.parent.parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols_v2.json')
-    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия", "Расчетные параметры"]
+    tsfresh_dict = read_cfg(cfg_dir / 'intersection_rf_lasso.json')
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
     input_features = []
     window_features = []
 
@@ -212,7 +216,7 @@ def train(
     pred = model.predict(X_test)
     # rmsle = sklearn.metrics.mean_squared_log_error(y_test, pred, squared=False)
     # print(rmsle)
-    joblib.dump(model, model_dir / "model_rf_lasso_v2.joblib")
+    joblib.dump(model, model_dir / "model_rf_inter_lasso.joblib")
     # model.save_model("../../model/model_lasso.cbm", format='cbm')
 
 
@@ -223,9 +227,9 @@ def predict(
 ):
     cfg_dir = Path(__file__).parent.parent.parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols_v2.json')
+    tsfresh_dict = read_cfg(cfg_dir / 'intersection_rf_lasso.json')
     input_features = []
-    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия", "Расчетные параметры"]
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
     window_features = []
 
     for key in tsfresh_dict.keys():
@@ -272,6 +276,6 @@ if __name__ == "__main__":
     if DO_TEST:
         test_data_dir = Path(__file__).parent.parent.parent / "data" / "test"
         num_workers = 4
-        model_dir = Path(__file__).parent.parent.parent / "model" / "model_rf_lasso_v2.joblib"
+        model_dir = Path(__file__).parent.parent.parent / "model" / "model_rf_inter_lasso.joblib"
         ans = predict(test_data_dir, num_workers, model_dir)
 

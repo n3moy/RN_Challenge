@@ -165,7 +165,7 @@ def make_processed_df(data_dir, split, num_workers, column_dtypes, tsfresh_featu
 
 
 def read_cfg(cfg_path):
-    with open(cfg_path, 'r', encoding='utf-8') as fin:
+    with open(cfg_path, 'r', encoding='windows-1251') as fin:
         cfg = json.load(fin)
     return cfg
 
@@ -173,8 +173,8 @@ def read_cfg(cfg_path):
 def train(args):
     cfg_dir = Path(__file__).parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols_v2.json')
-    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия", "Расчетные параметры"]
+    tsfresh_dict = read_cfg(cfg_dir / 'intersection_rf_lasso.json')
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
     input_features = []
     window_features = []
 
@@ -202,9 +202,9 @@ def train(args):
 def predict(args):
     cfg_dir = Path(__file__).parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols_v2.json')
+    tsfresh_dict = read_cfg(cfg_dir / 'intersection_rf_lasso.json')
     input_features = []
-    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия", "Расчетные параметры"]
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
     window_features = []
 
     for key in tsfresh_dict.keys():
