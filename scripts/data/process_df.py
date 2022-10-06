@@ -59,10 +59,6 @@ def process_single_df(split, column_dtypes, input_features, window_features, wel
     # df = pd.read_parquet(well_path)
     df = df_in[input_features + ['SK_Well', 'SK_Calendar', 'lastStartDate']]
 
-    df[input_features] = df[input_features].fillna(method='ffill')
-    df[input_features] = df[input_features].fillna(method='bfill')
-    df[input_features] = df[input_features].fillna(value=-1)
-
     if split == "train":
         df[['FailureDate', 'daysToFailure', 'CurrentTTF']] = df_in[['FailureDate', 'daysToFailure', 'CurrentTTF']]
 
@@ -87,8 +83,7 @@ def process_single_df(split, column_dtypes, input_features, window_features, wel
     # df[window_cols] = df[window_cols].fillna(method='ffill')
     # df[window_cols] = df[window_cols].fillna(method='bfill')
     # df[window_cols] = df[window_cols].fillna(value=-1)
-    # print(len(['SK_Well', 'CalendarDays'] + tsfresh_features + window_cols))
-    # print(len(set(['SK_Well', 'CalendarDays'] + tsfresh_features + window_cols)))
+
     if split == 'train':
         X_list = []
         min_date = df['SK_Calendar'].min()
@@ -159,7 +154,7 @@ def read_cfg(cfg_path):
 
 
 def make_processed_df(data_dir, split, num_workers, column_dtypes, tsfresh_features, window_features):
-    well_paths = sorted(data_dir.rglob('*.csv'))
+    well_paths = sorted(data_dir.rglob('*.csv'))[:2]
     partial_process_single_df = partial(process_single_df, split, column_dtypes, tsfresh_features, window_features)
 
     with warnings.catch_warnings():
@@ -235,7 +230,6 @@ def predict(
 
     for key in tsfresh_dict.keys():
         if key not in non_window_groups:
-            print(key)
             window_features.extend(tsfresh_dict[key])
         input_features.extend(tsfresh_dict[key])
 
