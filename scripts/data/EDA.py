@@ -264,14 +264,103 @@ def cat_features_analysis(
     calc_cat_features_stat(joined_data, save_folder=report_path, top_n = 30)
 
 
+def cols_to_groups(cols: list):
+    description_path = Path(__file__).parent.parent.parent / "reports" / "Описание признаков.csv"
+    features_description = pd.read_csv(description_path, encoding="utf-8")
+    features_description = features_description.rename(
+        columns={
+            "Название параметра": "par_name",
+            "Название столбца": "col_name",
+            "Тип данных": "data_type"
+        }
+    )
+
+    features_groups = features_description["Раздел"].unique().tolist()
+    report_out = pd.DataFrame(index=features_groups, columns=["cols_count"])
+    report_out["cols_count"] = 0
+    dict_out = {}
+    group_to_cols = {}
+    for group in features_groups:
+        vals = features_description.query("Раздел == @group")["col_name"].values.tolist()
+        # "Название параметра": "par_name",
+        # "Название столбца": "col_name",
+        # "Тип данных": "data_type"
+        group_to_cols[group] = vals
+        for col in cols:
+            if col in vals:
+                report_out.loc[group, "cols_count"] += 1
+                if group in dict_out:
+                    dict_out[group].append(col)
+                else:
+                    dict_out[group] = []
+                    dict_out[group].append(col)
+    return report_out, dict_out, group_to_cols
+
+
+def enrich_report(
+        report_data: pd.DataFrame,
+        stats_in: bool = True
+):
+    out_report = report_data.copy()
+
+    if stats_in:
+        out_report["Initial_feature"] = report_data["Feature"].str.split("__").apply(lambda x: x[0])
+        report_cols = out_report["Initial_feature"].values.tolist()
+    else:
+        report_cols = report_data["Feature"].values.tolist()
+    _, b, _ = cols_to_groups(report_cols)
+    out_report["group"] = out_report["Initial_feature"].apply(lambda x: [k for k in b.keys() if x in b[k]])
+    # out_report["col_name"] = out_report["Initial_feature"].apply(lambda x: features_description.query("col_name == @x")["par_name"].values[0])
+    #     out_report["col_type"] = out_report["Initial_feature"].apply(lambda x: features_description.query("col_name == @x")["data_type"].values[0])
+
+    return out_report
+
+
+def intersection_top(
+    reports_paths: List[Path],
+    top_n: int = 300,
+    out_config_path: Path = Path(__file__).parent.parent.parent / "configs"
+):
+    initial_cols = []
+    processed_cols = []
+    for fpath in reports_paths:
+        report_file = pd.read_excel(fpath)
+
+        if isinstance(top_n, int):
+            report_file = report_file.head(top_n)
+
+        i_cols = report_file["Initial_feature"].values.tolist()
+        p_cols = report_file["Feature"].values.tolist()
+
+        initial_cols.append(i_cols)
+        processed_cols.append(p_cols)
+
+    inter_top_features_i = initial_cols[0]
+    inter_top_features_p = processed_cols[0]
+
+    for ix in range(1, len(initial_cols)):
+        inter_top_features_i = np.intersect1d(inter_top_features_i, initial_cols[ix])
+        inter_top_features_p = np.intersect1d(inter_top_features_p, processed_cols[ix])
+    print(f"Top {top_n} processed features number: {len(inter_top_features_p)}")
+    print(f"Top {top_n} initial features number: {len(inter_top_features_i)}")
+
+    _, grouped_cols_i, _ = cols_to_groups(inter_top_features_i)
+    # print(grouped_cols_i)
+    # grouped_cols_p = cols_to_groups(inter_top_features_p)
+    save_path_i = out_config_path / "intersection_rf_lasso.json"
+    with open(save_path_i, "w") as j:
+        json.dump(grouped_cols_i, j, indent=1, ensure_ascii=False)
+
+
 # --- MAIN ---
 
 
 if __name__ == "__main__":
     DO_CORR = False
-    DO_LASSO = True
+    DO_LASSO = False
     DO_CATBOOST = False
-    DO_CAT_ANALYSIS = True
+    DO_CAT_ANALYSIS = False
+    DO_FEATURE_INTERSECTION = True
 
     if DO_CORR:
         files = get_parquet_files(Data_folder)
@@ -299,3 +388,12 @@ if __name__ == "__main__":
     if DO_CAT_ANALYSIS:
         DATA_DIR = Path(__file__).parent.parent.parent / "data" / "processed"
         cat_features_analysis(DATA_DIR, use_parquet=True)
+
+    if DO_FEATURE_INTERSECTION:
+        reports_path_list = [
+            Path(__file__).parent.parent.parent / "reports" / "lasso_coeffs_tsfresh.xlsx",
+            Path(__file__).parent.parent.parent / "reports" / "rf_v1_coeffs.xlsx",
+            Path(__file__).parent.parent.parent / "reports" / "rf_v2_coeffs.xlsx"
+        ]
+        intersection_top(reports_path_list)
+
