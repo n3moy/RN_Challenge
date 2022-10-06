@@ -261,7 +261,7 @@ def cat_features_analysis(
         joined_data = pd.concat([joined_data, data_file], axis=0)
 
     report_path = Path(__file__).parent.parent.parent / "reports"
-    calc_cat_features_stat(joined_data, save_folder=report_path, top_n = 30)
+    calc_cat_features_stat(joined_data, save_folder=report_path, top_n=5)
 
 
 def cols_to_groups(cols: list):
@@ -359,8 +359,8 @@ if __name__ == "__main__":
     DO_CORR = False
     DO_LASSO = False
     DO_CATBOOST = False
-    DO_CAT_ANALYSIS = False
-    DO_FEATURE_INTERSECTION = True
+    DO_CAT_ANALYSIS = True
+    DO_FEATURE_INTERSECTION = False
 
     if DO_CORR:
         files = get_parquet_files(Data_folder)
@@ -387,7 +387,7 @@ if __name__ == "__main__":
 
     if DO_CAT_ANALYSIS:
         DATA_DIR = Path(__file__).parent.parent.parent / "data" / "processed"
-        cat_features_analysis(DATA_DIR, use_parquet=True)
+        cat_features_analysis(DATA_DIR, use_parquet=False)
 
     if DO_FEATURE_INTERSECTION:
         reports_path_list = [
