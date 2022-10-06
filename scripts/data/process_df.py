@@ -73,23 +73,20 @@ def process_single_df(split, column_dtypes, input_features, window_features, wel
     )
 
     # df["SKLayers"] = df["SKLayers"].astype(str)
-    # df['SKLayers'] = df['SKLayers'].fillna(value='').str.split(';').map(len)
+    df['SKLayers'] = df['SKLayers'].fillna(value='').str.split(';').map(len)
     df['CalendarDays'] = (df['SK_Calendar'] - df['CalendarStart']).dt.days
-
-    # tsfresh_features = df.select_dtypes(include=np.number).columns.tolist()
-    tsfresh_features = window_features
 
     df[tsfresh_features] = df[tsfresh_features].fillna(method='ffill')
     df[tsfresh_features] = df[tsfresh_features].fillna(method='bfill')
     df[tsfresh_features] = df[tsfresh_features].fillna(value=-1)
 
-    # df, window_cols = build_window_features(df, window_features)
+    # df, window_cols = build_window_features(df, tsfresh_features)
+    #
     window_cols = []
     # df[window_cols] = df[window_cols].fillna(method='ffill')
     # df[window_cols] = df[window_cols].fillna(method='bfill')
     # df[window_cols] = df[window_cols].fillna(value=-1)
-    # print(len(['SK_Well', 'CalendarDays'] + tsfresh_features + window_cols))
-    # print(len(set(['SK_Well', 'CalendarDays'] + tsfresh_features + window_cols)))
+
     if split == 'train':
         X_list = []
         min_date = df['SK_Calendar'].min()
