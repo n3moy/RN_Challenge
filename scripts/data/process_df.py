@@ -57,7 +57,11 @@ def process_one_well(
 def process_single_df(split, column_dtypes, input_features, window_features, well_path):
     df_in = pd.read_csv(well_path, low_memory=False, dtype=column_dtypes)
     # df = pd.read_parquet(well_path)
-    df = df_in[input_features + ['SK_Well', 'SK_Calendar', 'lastStartDate']]
+    df = df_in[input_features + ['SK_Well', 'SK_Calendar', 'lastStartDate', 'SKLayers']]
+
+    df[input_features] = df[input_features].fillna(method='ffill')
+    df[input_features] = df[input_features].fillna(method='bfill')
+    df[input_features] = df[input_features].fillna(value=-1)
 
     if split == "train":
         df[['FailureDate', 'daysToFailure', 'CurrentTTF']] = df_in[['FailureDate', 'daysToFailure', 'CurrentTTF']]
@@ -76,9 +80,10 @@ def process_single_df(split, column_dtypes, input_features, window_features, wel
     df['SKLayers'] = df['SKLayers'].fillna(value='').str.split(';').map(len)
     df['CalendarDays'] = (df['SK_Calendar'] - df['CalendarStart']).dt.days
 
-    df[tsfresh_features] = df[tsfresh_features].fillna(method='ffill')
-    df[tsfresh_features] = df[tsfresh_features].fillna(method='bfill')
-    df[tsfresh_features] = df[tsfresh_features].fillna(value=-1)
+    # df[tsfresh_features] = df[tsfresh_features].fillna(method='ffill')
+    # df[tsfresh_features] = df[tsfresh_features].fillna(method='bfill')
+    # df[tsfresh_features] = df[tsfresh_features].fillna(value=-1)
+    tsfresh_features = window_features
 
     # df, window_cols = build_window_features(df, tsfresh_features)
     #
@@ -181,7 +186,7 @@ def train(
 ):
     cfg_dir = Path(__file__).parent.parent.parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols.json')
+    tsfresh_dict = read_cfg(cfg_dir / 'intersection_rf_lasso.json')
     non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
     input_features = []
     window_features = []
@@ -225,7 +230,7 @@ def predict(
 ):
     cfg_dir = Path(__file__).parent.parent.parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols.json')
+    tsfresh_dict = read_cfg(cfg_dir / 'intersection_rf_lasso.json')
     input_features = []
     non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
     window_features = []
@@ -263,7 +268,7 @@ if __name__ == "__main__":
     # test_file = pd.read_parquet(DATA_FILE)
     # print(f"Shape before: {test_file.shape}")
 
-    DO_TRAIN = False
+    DO_TRAIN = True
     DO_TEST = True
 
     if DO_TRAIN:
