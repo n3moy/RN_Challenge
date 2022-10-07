@@ -49,17 +49,8 @@ def build_window_features(
     return out_data, out_cols
 
 
-def process_single_df(split, column_dtypes, input_features, window_features, well_path):
-    df_in = pd.read_csv(well_path, low_memory=False, dtype=column_dtypes)
-    # df = pd.read_parquet(well_path)
-    df = df_in[input_features + ['SK_Well', 'SK_Calendar', 'lastStartDate']]
-
-    df[input_features] = df[input_features].fillna(method='ffill')
-    df[input_features] = df[input_features].fillna(method='bfill')
-    df[input_features] = df[input_features].fillna(value=-1)
-
-    if split == "train":
-        df[['FailureDate', 'daysToFailure', 'CurrentTTF']] = df_in[['FailureDate', 'daysToFailure', 'CurrentTTF']]
+def process_single_df(split, column_dtypes, tsfresh_features, window_features,well_path):
+    df = pd.read_csv(well_path, low_memory=False, dtype=column_dtypes)
 
     df['SK_Calendar'] = pd.to_datetime(df['SK_Calendar'], format='%Y-%m-%d')
     df['lastStartDate'] = pd.to_datetime(df['lastStartDate'], format='%Y-%m-%d')
@@ -71,8 +62,7 @@ def process_single_df(split, column_dtypes, input_features, window_features, wel
         on='SK_Well', how='left'
     )
 
-    # df["SKLayers"] = df["SKLayers"].astype(str)
-    # df['SKLayers'] = df['SKLayers'].fillna(value='').str.split(';').map(len)
+    df['SKLayers'] = df['SKLayers'].fillna(value='').str.split(';').map(len)
     df['CalendarDays'] = (df['SK_Calendar'] - df['CalendarStart']).dt.days
 
     # tsfresh_features = df.select_dtypes(include=np.number).columns.tolist()
@@ -222,6 +212,7 @@ def predict(args):
     # model = CatBoostRegressor().load_model(args.model_dir / 'model.cbm')
     model = joblib.load(args.model_dir / 'model.joblib')
     preds = model.predict(test_df)
+    preds = np.abs(preds)
     sub = pd.DataFrame({'filename': [well_path.name for well_path in well_paths], 'daysToFailure': preds})
     sub.to_csv(args.output_dir / 'submission.csv', index=False)
 
