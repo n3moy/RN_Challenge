@@ -58,7 +58,7 @@ def process_one_well(
 def process_single_df(split, column_dtypes, input_features, window_features, well_path):
     df_in = pd.read_csv(well_path, low_memory=False, dtype=column_dtypes)
     # df = pd.read_parquet(well_path)
-    df = df_in[input_features + ['SK_Well', 'SK_Calendar', 'lastStartDate', 'SKLayers']]
+    df = df_in[input_features + ['SK_Well', 'SK_Calendar', 'lastStartDate']]
 
     # df[window_features] = df[window_features].fillna(method='ffill')
     # df[window_features] = df[window_features].fillna(method='bfill')
@@ -78,7 +78,7 @@ def process_single_df(split, column_dtypes, input_features, window_features, wel
     )
 
     # df["SKLayers"] = df["SKLayers"].astype(str)
-    df['SKLayers'] = df['SKLayers'].fillna(value='').str.split(';').map(len)
+    # df['SKLayers'] = df['SKLayers'].fillna(value='').str.split(';').map(len)
     df['CalendarDays'] = (df['SK_Calendar'] - df['CalendarStart']).dt.days
 
     # tsfresh_features = df.select_dtypes(include=np.number).columns.tolist()
@@ -163,7 +163,7 @@ def read_cfg(cfg_path):
 
 
 def make_processed_df(data_dir, split, num_workers, column_dtypes, tsfresh_features, window_features):
-    well_paths = sorted(data_dir.rglob('*.csv'))[:2]
+    well_paths = sorted(data_dir.rglob('*.csv'))
     partial_process_single_df = partial(process_single_df, split, column_dtypes, tsfresh_features, window_features)
 
     with warnings.catch_warnings():
@@ -189,7 +189,7 @@ def train(
     cfg_dir = Path(__file__).parent.parent.parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
     tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols_v2_cat.json')
-    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия", "Категориальные"]
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия", "Расчетные параметры", "Категориальные"]
     input_features = []
     window_features = []
 
@@ -224,16 +224,13 @@ def train(
     X = pd.concat([X, transform_cols], axis=1)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # X_train = X_train.drop(cat_features, axis=1)
-    # X_test = X_test.drop(cat_features, axis=1)
-
     model = RandomForestRegressor(verbose=100, n_jobs=-1)
     model.fit(X_train, y_train)
     pred = model.predict(X_test)
     rmsle = sklearn.metrics.mean_squared_log_error(y_test, pred, squared=False)
     print(rmsle)
-    joblib.dump(model, "../../model/model_rf.joblib")
-    joblib.dump(encoder, "../../model/ohe.joblib")
+    joblib.dump(model, model_dir / "model_rf_cat_v1.joblib")
+    joblib.dump(encoder, model_dir / "ohe.joblib")
     # model.save_model("../../model/model_lasso.cbm", format='cbm')
 
 
@@ -246,7 +243,7 @@ def predict(
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
     tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols_v2_cat.json')
     input_features = []
-    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия", "Категориальные"]
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия", "Расчетные параметры", "Категориальные"]
     window_features = []
 
     for key in tsfresh_dict.keys():
@@ -274,17 +271,14 @@ def predict(
     test_df[num_features] = test_df[num_features].fillna(method='ffill')
     test_df[num_features] = test_df[num_features].fillna(method='bfill')
     test_df[num_features] = test_df[num_features].fillna(value=-1)
-    encoder = joblib.load("../../model/ohe.joblib")
+    encoder = joblib.load(model_dir / "ohe.joblib")
     transform_cols = pd.DataFrame(encoder.transform(test_df[tsfresh_dict["Категориальные"]]),
                                   columns=encoder.get_feature_names_out())
     test_df = test_df.drop(columns=tsfresh_dict["Категориальные"])
     test_df = pd.concat([test_df, transform_cols], axis=1)
-    # cat_features = list(test_df.select_dtypes('object').columns)
-    # test_df = test_df.drop(cat_features, axis=1)
-    # print(cat_features)
-    # model = CatBoostRegressor().load_model(model_dir)
+
     print(test_df.shape)
-    model = joblib.load(model_dir)
+    model = joblib.load(model_dir / "model_rf_v2_cat.joblib")
     preds = model.predict(test_df)
     sub = pd.DataFrame({'filename': [well_path.name for well_path in well_paths], 'daysToFailure': preds})
     sub.to_csv("../../data/sub.csv", index=False)
@@ -300,7 +294,7 @@ if __name__ == "__main__":
     # test_file = pd.read_parquet(DATA_FILE)
     # print(f"Shape before: {test_file.shape}")
 
-    DO_TRAIN = True
+    DO_TRAIN = False
     DO_TEST = True
 
     if DO_TRAIN:
@@ -311,6 +305,6 @@ if __name__ == "__main__":
     if DO_TEST:
         test_data_dir = Path(__file__).parent.parent.parent / "data" / "test"
         num_workers = 4
-        model_dir = Path(__file__).parent.parent.parent / "model" / "model_rf_inter_lasso.joblib"
+        model_dir = Path(__file__).parent.parent.parent / "model"
         ans = predict(test_data_dir, num_workers, model_dir)
 
