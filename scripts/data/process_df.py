@@ -3,7 +3,7 @@ import json
 # import argparse
 
 import pandas as pd
-from pandas.api.types import is_datetime64_any_dtype as is_datetime
+# from pandas.api.types import is_datetime64_any_dtype as is_datetime
 import numpy as np
 from typing import List
 
@@ -21,18 +21,19 @@ from tsfresh import extract_features
 from tsfresh.feature_extraction import MinimalFCParameters
 from sklearn.model_selection import train_test_split
 import sklearn.metrics
+from sklearn.preprocessing import OneHotEncoder
 
 from scripts.features.dynamic_features import build_features, filter_data
 from scripts.features.dynamic_features import build_window_features
 
 
 def process_one_well(
-    column_dtypes,
-    well_path,
-    save_features: List[str],
-    dynamic_features: List[str],
-    test_nan_features: List[str],
-    window_features: List[str]
+        column_dtypes,
+        well_path,
+        save_features: List[str],
+        dynamic_features: List[str],
+        test_nan_features: List[str],
+        window_features: List[str]
 ) -> pd.DataFrame:
     df = pd.read_csv(well_path, low_memory=False, dtype=column_dtypes)
 
@@ -59,9 +60,9 @@ def process_single_df(split, column_dtypes, input_features, window_features, wel
     # df = pd.read_parquet(well_path)
     df = df_in[input_features + ['SK_Well', 'SK_Calendar', 'lastStartDate', 'SKLayers']]
 
-    df[input_features] = df[input_features].fillna(method='ffill')
-    df[input_features] = df[input_features].fillna(method='bfill')
-    df[input_features] = df[input_features].fillna(value=-1)
+    # df[window_features] = df[window_features].fillna(method='ffill')
+    # df[window_features] = df[window_features].fillna(method='bfill')
+    # df[window_features] = df[window_features].fillna(value=-1)
 
     if split == "train":
         df[['FailureDate', 'daysToFailure', 'CurrentTTF']] = df_in[['FailureDate', 'daysToFailure', 'CurrentTTF']]
@@ -80,11 +81,10 @@ def process_single_df(split, column_dtypes, input_features, window_features, wel
     df['SKLayers'] = df['SKLayers'].fillna(value='').str.split(';').map(len)
     df['CalendarDays'] = (df['SK_Calendar'] - df['CalendarStart']).dt.days
 
-    # df[tsfresh_features] = df[tsfresh_features].fillna(method='ffill')
-    # df[tsfresh_features] = df[tsfresh_features].fillna(method='bfill')
-    # df[tsfresh_features] = df[tsfresh_features].fillna(value=-1)
     tsfresh_features = window_features
-
+    df[tsfresh_features] = df[tsfresh_features].fillna(method='ffill')
+    df[tsfresh_features] = df[tsfresh_features].fillna(method='bfill')
+    df[tsfresh_features] = df[tsfresh_features].fillna(value=-1)
     # df, window_cols = build_window_features(df, tsfresh_features)
     #
     window_cols = []
@@ -156,7 +156,7 @@ def process_single_df(split, column_dtypes, input_features, window_features, wel
 
 
 def read_cfg(cfg_path):
-    with open(cfg_path, 'r') as fin:
+    with open(cfg_path, 'r', encoding="utf-8") as fin:
         cfg = json.load(fin)
     return cfg
 
@@ -181,58 +181,72 @@ def make_processed_df(data_dir, split, num_workers, column_dtypes, tsfresh_featu
 
 
 def train(
-    data_dir: Path,
-    num_workers: int
+        data_dir: Path,
+        num_workers: int
 ):
     cfg_dir = Path(__file__).parent.parent.parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_dict = read_cfg(cfg_dir / 'intersection_rf_lasso.json')
-    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
+    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols_v2_cat.json')
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия", "Категориальные"]
     input_features = []
     window_features = []
 
     for key in tsfresh_dict.keys():
         if key not in non_window_groups:
+            print(key)
             window_features.extend(tsfresh_dict[key])
         input_features.extend(tsfresh_dict[key])
+    # print(set(window_features).issubset(set(input_features)))
     # del input_features[["daysToFailure", "CurrentTTF"]]
     # input_features = list(set(input_features))
     train_df, _ = make_processed_df(data_dir, 'train', num_workers, column_dtypes, input_features, window_features)
-    X = train_df.drop(columns=['FailureDate', 'daysToFailure', 'CurrentTTF', 'SK_Calendar', 'lastStartDate', 'CalendarStart'])
+    X = train_df.drop(columns=[
+        'FailureDate', 'daysToFailure', 'CurrentTTF', 'SK_Calendar', 'lastStartDate', 'CalendarStart', "SK_Well"
+    ])
     y = train_df['daysToFailure']
+    cat_features = list(X.select_dtypes('object').columns)
+    num_features = list(X.select_dtypes(np.number).columns)
+
+    print(tsfresh_dict["Категориальные"] == cat_features)
+    print(len(tsfresh_dict["Категориальные"]), len(cat_features))
+
+    X[tsfresh_dict["Категориальные"]] = X[
+        tsfresh_dict["Категориальные"]
+    ].astype(str).fillna('')
+    X[num_features] = X[num_features].fillna(method='ffill')
+    X[num_features] = X[num_features].fillna(method='bfill')
+    X[num_features] = X[num_features].fillna(value=-1)
+
+    encoder = OneHotEncoder(handle_unknown="ignore", max_categories=7, sparse=False)
+    transform_cols = pd.DataFrame(encoder.fit_transform(X[tsfresh_dict["Категориальные"]]),
+                                  columns=encoder.get_feature_names_out())
+    X = X.drop(columns=tsfresh_dict["Категориальные"])
+    X = pd.concat([X, transform_cols], axis=1)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    cat_features = list(X_train.select_dtypes('object').columns)
-    # print(cat_features)
-    # X_train = pd.get_dummies(X_train, columns=cat_features)
-    X_train = X_train.drop(cat_features, axis=1)
-    X_test = X_test.drop(cat_features, axis=1)
-    # X_train[cat_features] = X_train[
-    #     cat_features
-    # ].astype(str).fillna('')
-    # cat_features=cat_features
-    # model = CatBoostRegressor(verbose=100)
-    # for col in X_train.columns:
-    #     if not (X_train[col].dtype == np.float):
-    #         print(col, X_train[col].dtype)
+
+    # X_train = X_train.drop(cat_features, axis=1)
+    # X_test = X_test.drop(cat_features, axis=1)
+
     model = RandomForestRegressor(verbose=100, n_jobs=-1)
     model.fit(X_train, y_train)
     pred = model.predict(X_test)
     rmsle = sklearn.metrics.mean_squared_log_error(y_test, pred, squared=False)
     print(rmsle)
     joblib.dump(model, "../../model/model_rf.joblib")
+    joblib.dump(encoder, "../../model/ohe.joblib")
     # model.save_model("../../model/model_lasso.cbm", format='cbm')
 
 
 def predict(
-    data_dir: Path,
-    num_workers: int,
-    model_dir: str
+        data_dir: Path,
+        num_workers: int,
+        model_dir: str
 ):
     cfg_dir = Path(__file__).parent.parent.parent / 'configs'
     column_dtypes = read_cfg(cfg_dir / 'column_dtypes.json')
-    tsfresh_dict = read_cfg(cfg_dir / 'intersection_rf_lasso.json')
+    tsfresh_dict = read_cfg(cfg_dir / 'non_zero_lasso_cols_v2_cat.json')
     input_features = []
-    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия"]
+    non_window_groups = ["Оборудование", "Отказы", "Скважинно-пластовые условия", "Категориальные"]
     window_features = []
 
     for key in tsfresh_dict.keys():
@@ -241,17 +255,35 @@ def predict(
         input_features.extend(tsfresh_dict[key])
 
     # input_features = list(set(input_features))
-    test_df, well_paths = make_processed_df(data_dir, 'test', num_workers, column_dtypes, input_features, window_features)
-    test_df = test_df.drop(columns=['SK_Calendar', 'lastStartDate', 'CalendarStart'])
+    test_df, well_paths = make_processed_df(data_dir, 'test', num_workers, column_dtypes, input_features,
+                                            window_features)
+    test_df = test_df.drop(columns=[
+        'SK_Calendar', 'lastStartDate', 'CalendarStart', 'SK_Well'
+    ])
+    # X = test_df.drop(columns=['FailureDate', 'daysToFailure', 'CurrentTTF', 'SK_Calendar', 'lastStartDate', 'CalendarStart'])
 
     cat_features = list(test_df.select_dtypes('object').columns)
-    test_df = test_df.drop(cat_features, axis=1)
-    print(cat_features)
-    # test_df[cat_features] = test_df[
-    #     cat_features
-    # ].astype(str).fillna('')
-    # test_df = test_df.dropna()
+    num_features = list(test_df.select_dtypes(np.number).columns)
+
+    print(tsfresh_dict["Категориальные"] == cat_features)
+    print(len(tsfresh_dict["Категориальные"]), len(cat_features))
+    # , min_frequency=6000
+    test_df[tsfresh_dict["Категориальные"]] = test_df[
+        tsfresh_dict["Категориальные"]
+    ].astype(str).fillna('')
+    test_df[num_features] = test_df[num_features].fillna(method='ffill')
+    test_df[num_features] = test_df[num_features].fillna(method='bfill')
+    test_df[num_features] = test_df[num_features].fillna(value=-1)
+    encoder = joblib.load("../../model/ohe.joblib")
+    transform_cols = pd.DataFrame(encoder.transform(test_df[tsfresh_dict["Категориальные"]]),
+                                  columns=encoder.get_feature_names_out())
+    test_df = test_df.drop(columns=tsfresh_dict["Категориальные"])
+    test_df = pd.concat([test_df, transform_cols], axis=1)
+    # cat_features = list(test_df.select_dtypes('object').columns)
+    # test_df = test_df.drop(cat_features, axis=1)
+    # print(cat_features)
     # model = CatBoostRegressor().load_model(model_dir)
+    print(test_df.shape)
     model = joblib.load(model_dir)
     preds = model.predict(test_df)
     sub = pd.DataFrame({'filename': [well_path.name for well_path in well_paths], 'daysToFailure': preds})
@@ -280,4 +312,3 @@ if __name__ == "__main__":
         num_workers = 4
         model_dir = "../../model/model_rf.joblib"
         ans = predict(test_data_dir, num_workers, model_dir)
-
